@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generate iOS App Icon"
+  short_description: "Create Apple-style app icons from iOS project context."
+  default_prompt: "Use $generate-ios-app-icon to inspect this iOS app and generate a compliant app icon concept."

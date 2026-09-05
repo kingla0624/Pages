@@ -1,0 +1,71 @@
+# Codex configuration for this repository.
+#
+# Project-level config, loaded from the repository root downward for trusted
+# projects; ~/.codex/config.toml holds your personal defaults and this file
+# overrides them here. Codex reads TOML; it does not read .claude/settings.json,
+# and copying that file anywhere under this repo has no effect — the format and
+# the control model are both different.
+#
+# Claude Code controls permission per command (an allow/ask/deny list of shell
+# patterns). Codex controls it with two switches: how much the sandbox can
+# reach, and when Codex stops to ask. The intent below is the same as the
+# Claude side — work freely inside the workspace, stop at anything that leaves
+# it — but see "What does not carry over" at the bottom before assuming parity.
+
+# Write inside the workspace without asking; anything outside it needs approval.
+# This is the counterpart of "defaultMode": "acceptEdits" on the Claude side.
+sandbox_mode = "workspace-write"
+
+# Stop and ask when a command needs to escape the sandbox, rather than failing
+# it outright ("untrusted") or running it unattended ("never").
+approval_policy = "on-request"
+
+[sandbox_workspace_write]
+# Spawned commands may reach the network without an approval prompt. This is
+# the setting that stops npm install, a docs fetch or a git clone from asking
+# every time.
+#
+# It is a wider grant than the filesystem one above, and differently shaped: a
+# bad write inside the workspace is recoverable from git, while a command that
+# can read the workspace and also reach the network can send its contents
+# somewhere and that is not recoverable. Exfiltration is the documented risk
+# class here, and it is worth knowing that AGENTS.md in this repository asks
+# for approval before network calls that mutate external state — instructions
+# shape what an agent tries, but this key is what the sandbox enforces.
+#
+# To keep the convenience and narrow the target, add a domain allowlist. It
+# layers on top of this key rather than replacing it — network_access must
+# stay true for the proxy to have anything to filter. Unlisted domains are
+# denied, deny wins over allow, and local and private addresses are blocked
+# by default. Patterns: exact host, *.example.com for subdomains only,
+# **.example.com for apex plus subdomains, * for everything.
+#
+#   [features.network_proxy]
+#   enabled = true
+#   domains = { "registry.npmjs.org" = "allow", "**.github.com" = "allow" }
+network_access = true
+
+# ---------------------------------------------------------------------------
+# What does not carry over from .claude/settings.json
+#
+# Per-command rules have no equivalent. Codex has no allow/deny list for shell
+# commands, so each of these is enforced only by the sandbox boundary above,
+# not by a rule naming the command:
+#
+#   ask   make · pip install · npm install · curl · wget · git push ·
+#         git checkout -- · rm
+#   deny  sudo · rm -rf · git reset --hard
+#
+# Two consequences worth knowing:
+#
+#   A destructive command inside the workspace is not stopped here. `rm -rf`
+#   against a path in this repository is a workspace write, so the sandbox
+#   permits it; on the Claude side it is denied outright. If that matters,
+#   the lever is sandbox_mode = "read-only" plus approval for everything else,
+#   which trades away the convenience this file was written for.
+#
+#   Secret files are not individually protected. The Claude side denies reads
+#   of .env, secrets/, ~/.ssh, *.pem and the credentials file by path. Here,
+#   anything inside the workspace is readable, and anything outside it needs
+#   approval — the protection is positional, not per-file.
+# ---------------------------------------------------------------------------

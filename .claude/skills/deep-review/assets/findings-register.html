@@ -1,0 +1,601 @@
+<title>{{PROJECT}} Findings Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@500;700&family=Noto+Serif+SC:wght@400;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+
+<style>
+:root {
+  --paper:      #F6F7F9;
+  --surface:    #FFFFFF;
+  --surface-2:  #EDEFF3;
+  --ink:        #14181B;
+  --ink-2:      #59616E;
+  --ink-3:      #858D9A;
+  --rule:       #D8DCE3;
+  --rule-soft:  #E7EAEF;
+  --accent:     #2F5D8C;
+  --accent-bg:  #E6EDF5;
+  --high:       #A93F31;
+  --high-bg:    #F6E7E4;
+  --med:        #9A6F14;
+  --med-bg:     #F6EFDE;
+  --low:        #40606E;
+  --low-bg:     #E6EEF1;
+  --ok:         #3E6B4A;
+  --shadow:     0 1px 2px rgba(20,24,27,.05), 0 8px 24px -16px rgba(20,24,27,.22);
+
+  --f-display: "Archivo", "Noto Sans SC", "PingFang SC", "Helvetica Neue", sans-serif;
+  --f-body:    "Source Serif 4", "Noto Serif SC", "Songti SC", Georgia, serif;
+  --f-mono:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, "Noto Sans SC", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:     #111419;
+    --surface:   #181C23;
+    --surface-2: #1F242C;
+    --ink:       #E5E8ED;
+    --ink-2:     #9AA4B2;
+    --ink-3:     #6E7887;
+    --rule:      #2B313A;
+    --rule-soft: #232830;
+    --accent:    #84ABD6;
+    --accent-bg: #1B2733;
+    --high:      #E08476;
+    --high-bg:   #2E1F1C;
+    --med:       #D9AB53;
+    --med-bg:    #2C2517;
+    --low:       #8CB3C2;
+    --low-bg:    #1B252A;
+    --ok:        #7FB78C;
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper:     #111419;
+  --surface:   #181C23;
+  --surface-2: #1F242C;
+  --ink:       #E5E8ED;
+  --ink-2:     #9AA4B2;
+  --ink-3:     #6E7887;
+  --rule:      #2B313A;
+  --rule-soft: #232830;
+  --accent:    #84ABD6;
+  --accent-bg: #1B2733;
+  --high:      #E08476;
+  --high-bg:   #2E1F1C;
+  --med:       #D9AB53;
+  --med-bg:    #2C2517;
+  --low:       #8CB3C2;
+  --low-bg:    #1B252A;
+  --ok:        #7FB78C;
+  --shadow:    0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: 3.5rem 1.5rem 6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+}
+
+/* ---------- masthead ---------- */
+
+.mast { display: flex; flex-direction: column; gap: 1.1rem; }
+
+.eyebrow {
+  font-family: var(--f-mono);
+  font-size: .7rem;
+  font-weight: 500;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1.1rem;
+}
+
+h1 {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: clamp(2.1rem, 6vw, 3.1rem);
+  line-height: 1.04;
+  letter-spacing: -.022em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.standfirst {
+  font-size: 1.075rem;
+  color: var(--ink-2);
+  max-width: 46rem;
+  margin: 0;
+}
+
+.standfirst strong { color: var(--ink); font-weight: 600; }
+
+/* ---------- ledger strip ---------- */
+
+.ledger {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.cell {
+  padding: .95rem 1.1rem;
+  border-right: 1px solid var(--rule-soft);
+  display: flex;
+  flex-direction: column;
+  gap: .18rem;
+}
+.cell:last-child { border-right: 0; }
+
+.cell .k {
+  font-family: var(--f-mono);
+  font-size: .64rem;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.cell .v {
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: 1.45rem;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+.cell .n { font-family: var(--f-mono); font-size: .72rem; color: var(--ink-2); }
+.v.high { color: var(--high); }
+.v.med  { color: var(--med); }
+.v.low  { color: var(--low); }
+.v.ok   { color: var(--ok); }
+.v.bad  { color: var(--high); }
+
+/* ---------- section headings ---------- */
+
+section { display: flex; flex-direction: column; gap: 1.25rem; }
+
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: .85rem;
+  padding-bottom: .7rem;
+  border-bottom: 2px solid var(--ink);
+}
+.sec-head h2 {
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: 1.28rem;
+  letter-spacing: -.012em;
+  margin: 0;
+}
+.sec-head .count {
+  font-family: var(--f-mono);
+  font-size: .72rem;
+  color: var(--ink-3);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.sec-note {
+  color: var(--ink-2);
+  font-size: .96rem;
+  margin: -.4rem 0 0;
+  max-width: 46rem;
+}
+
+/* ---------- filters ---------- */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  align-items: center;
+}
+.filters .lbl {
+  font-family: var(--f-mono);
+  font-size: .66rem;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-right: .35rem;
+}
+.chip {
+  font-family: var(--f-mono);
+  font-size: .72rem;
+  font-weight: 500;
+  letter-spacing: .04em;
+  padding: .32rem .7rem;
+  border-radius: 2px;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.chip:hover { border-color: var(--ink-3); color: var(--ink); }
+.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+/* ---------- finding ---------- */
+
+.reg { display: flex; flex-direction: column; gap: .9rem; }
+
+.find {
+  display: grid;
+  grid-template-columns: 3px 1fr;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.find[hidden] { display: none; }
+.stripe { background: var(--low); }
+.find[data-sev="high"] .stripe { background: var(--high); }
+.find[data-sev="med"]  .stripe { background: var(--med); }
+
+.body { padding: 1.15rem 1.35rem 1.3rem; display: flex; flex-direction: column; gap: .8rem; min-width: 0; }
+
+.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem .7rem; }
+
+.id {
+  font-family: var(--f-mono);
+  font-size: .74rem;
+  font-weight: 600;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.sev {
+  font-family: var(--f-mono);
+  font-size: .62rem;
+  font-weight: 600;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  padding: .16rem .45rem;
+  border-radius: 2px;
+  background: var(--low-bg);
+  color: var(--low);
+}
+.find[data-sev="high"] .sev { background: var(--high-bg); color: var(--high); }
+.find[data-sev="med"]  .sev { background: var(--med-bg);  color: var(--med); }
+
+.repro {
+  font-family: var(--f-mono);
+  font-size: .62rem;
+  font-weight: 500;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  padding: .16rem .45rem;
+  border-radius: 2px;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.fixed, .owner {
+  font-family: var(--f-mono);
+  font-size: .62rem;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  padding: .16rem .45rem;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+}
+.fixed { color: var(--ok); }
+.owner { color: var(--ink-2); }
+.openq { color: var(--med); }
+
+.regrade {
+  font-family: var(--f-mono);
+  font-size: .62rem;
+  letter-spacing: .06em;
+  color: var(--ink-3);
+}
+
+.title {
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: 1.055rem;
+  line-height: 1.32;
+  letter-spacing: -.008em;
+  flex-basis: 100%;
+  text-wrap: balance;
+}
+
+.loc {
+  font-family: var(--f-mono);
+  font-size: .73rem;
+  color: var(--accent);
+  word-break: break-all;
+}
+
+.blocks { display: flex; flex-direction: column; gap: .55rem; }
+.blk { display: grid; grid-template-columns: 4.6rem 1fr; gap: .8rem; align-items: baseline; }
+.blk dt {
+  font-family: var(--f-mono);
+  font-size: .61rem;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-top: .18rem;
+}
+.blk dd { margin: 0; font-size: .935rem; line-height: 1.58; color: var(--ink); }
+.blk dd.dim { color: var(--ink-2); }
+code {
+  font-family: var(--f-mono);
+  font-size: .855em;
+  background: var(--surface-2);
+  padding: .08em .32em;
+  border-radius: 2px;
+  word-break: break-word;
+}
+.num { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 34rem) {
+  .blk { grid-template-columns: 1fr; gap: .12rem; }
+  .blk dt { padding-top: .3rem; }
+}
+
+/* ---------- verified-correct panel ---------- */
+
+/* Coverage statement, deliberately outside .clean: it reports what was swept,
+   not what was derived, and must not sit under the derivations heading. */
+.lenses {
+  margin: 0;
+  padding: .85rem 1.1rem;
+  border: 1px dashed var(--rule);
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-size: .93rem;
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+.lenses strong { color: var(--ink); font-weight: 600; }
+
+.clean {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--ok);
+  border-radius: 4px;
+  background: var(--surface);
+  padding: 1.15rem 1.35rem;
+}
+.clean ul { margin: .6rem 0 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .4rem; }
+.clean li { font-size: .935rem; color: var(--ink-2); }
+.clean li strong { color: var(--ink); font-weight: 600; }
+.clean h3 {
+  font-family: var(--f-display); font-weight: 600; font-size: .95rem;
+  margin: 0; letter-spacing: -.006em;
+}
+
+/* ---------- method / footer ---------- */
+
+.method {
+  border-top: 1px solid var(--rule);
+  padding-top: 1.4rem;
+  color: var(--ink-2);
+  font-size: .9rem;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+}
+.method p { margin: 0; max-width: 46rem; }
+.method .h {
+  font-family: var(--f-mono); font-size: .66rem; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<!-- ===================================================================
+     FINDINGS REGISTER — template
+
+     Replace every {{PLACEHOLDER}}. Delete the blocks you do not need;
+     keep the class names, the CSS and the filter script at the bottom
+     depend on them.
+
+     Severity classes: data-sev="high" | "med" | "low"
+     The filter script derives its severities from the entries present —
+     nothing to maintain. Ship a chip for every severity you file (a chip
+     whose severity has no entries hides itself). Add or remove ledger
+     cells to match the severities you actually filed.
+
+     Non-English reports: translate the static chrome too — the <h1>,
+     ledger labels and notes, chip labels, section headings, Method — and
+     the two count strings marked LOCALIZE at the top of the script.
+     =================================================================== -->
+
+<div class="wrap">
+
+  <header class="mast">
+    <div class="eyebrow">
+      <span>{{PROJECT}} &middot; {{PLATFORM}} &middot; {{LANGUAGE}}</span>
+      <span>branch {{BRANCH}} @ {{COMMIT}}</span>
+      <span>{{LINES}} lines &middot; {{FILES}} files</span>
+    </div>
+    <h1>Findings Register</h1>
+    <p class="standfirst">
+      {{STANDFIRST — what was read, how it was reviewed, and the honest
+      headline. State the scope ("a full read of every X file"), the method
+      ("N independent reviews with an adversarial verification pass"), and
+      what you actually concluded, including what is <strong>good</strong>.
+      If severities were re-graded on a second round, say so here.}}
+    </p>
+  </header>
+
+  <div class="ledger">
+    <div class="cell"><span class="k">Build</span><span class="v {{ok|bad}}">{{CLEAN|FAILING}}</span><span class="n">{{caveat}}</span></div>
+    <div class="cell"><span class="k">Tests</span><span class="v {{ok|bad}}">{{tests-passed}} / {{tests-total}}</span><span class="n">{{breakdown}}</span></div>
+    <div class="cell"><span class="k">Fixed</span><span class="v ok">{{fixed-count}}</span><span class="n">mutation-verified</span></div>
+    <!-- One severity cell per severity you actually filed: delete the ones you did
+         not, and keep High only if a High entry exists. Unlike the filter chips,
+         these do not hide themselves. -->
+    <div class="cell"><span class="k">High</span><span class="v high">{{high-count}}</span><span class="n">fix before shipping</span></div>
+    <div class="cell"><span class="k">Medium</span><span class="v med">{{medium-count}}</span><span class="n">worth scheduling</span></div>
+    <div class="cell"><span class="k">Low</span><span class="v low">{{low-count}}</span><span class="n">polish &amp; drift</span></div>
+    <div class="cell"><span class="k">Verified</span><span class="v">{{confirmed-count}}</span><span class="n">{{refuted-count}} refuted, {{open-count}} open</span></div>
+  </div>
+
+  <section>
+    <div class="sec-head">
+      <h2>The register</h2>
+      <span class="count" id="shown" aria-live="polite">{{total-entries}} entries</span>
+    </div>
+    <div class="filters" role="group" aria-label="{{Severity filter}}">
+      <span class="lbl">Show</span>
+      <button class="chip" data-f="all" aria-pressed="true">All {{total-entries}}</button>
+      <button class="chip" data-f="high" aria-pressed="true">High {{high-count}}</button>
+      <button class="chip" data-f="med" aria-pressed="true">Medium {{medium-count}}</button>
+      <button class="chip" data-f="low" aria-pressed="true">Low {{low-count}}</button>
+    </div>
+
+    <div class="reg" id="reg">
+
+      <!-- ---------- one finding; repeat, highest severity first ---------- -->
+      <article class="find" data-sev="med">
+        <div class="stripe"></div>
+        <div class="body">
+          <div class="top">
+            <span class="id">01</span><span class="sev">Medium</span><span class="fixed">Fixed</span><span class="repro">Reproduced</span>
+            <span class="regrade">re-graded from High</span>
+            <!-- other badges, as report-format.md defines them:
+                 <span class="owner">Owner's call</span>  <span class="openq">Open</span> -->
+            <span class="title">{{A declarative sentence naming the wrong behaviour — not a label. See references/report-format.md}}</span>
+          </div>
+          <div class="loc">{{path/File.ext:LINE}} &middot; {{secondary site, if the same defect appears twice}}</div>
+          <dl class="blocks">
+            <div class="blk"><dt>Mechanism</dt><dd>{{Why the code does this. Name the functions with <code>code</code>. State the property that makes it inevitable, not just the symptom.}}</dd></div>
+            <div class="blk"><dt>Fails</dt><dd class="dim">{{The concrete failing case with real values, and how reachable it is from a default state — <strong>in taps or calls</strong>. Quantify with <span class="num">numbers</span>: how many cases collide, over how large a sweep.}}</dd></div>
+            <div class="blk"><dt>Fix</dt><dd class="dim">{{What to change, and what must keep working. Use <dt>Fixed</dt> instead once applied, and state the post-fix measurement.}}</dd></div>
+            <!-- Closing block, one of: Fix (proposed) · Fixed (applied) ·
+                 Left alone (real, deliberately not acted on) ·
+                 But deliberate (not a defect; the evidence it was a decision). -->
+          </dl>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>Verified correct</h2></div>
+    <p class="sec-note">{{Why this section exists: these are the parts most likely to be quietly wrong in a system like this, and they are not.}}</p>
+    <p class="lenses"><strong>Lens dispositions.</strong> {{One per standing lens,
+      each swept-clean / filed / not-applicable / unswept — e.g.
+      security — swept the N input boundaries, clean &middot;
+      performance — filed as 07 &middot;
+      architecture — clean (dependency sweep) &middot;
+      readability — filed as 12 &middot;
+      product/UI — not applicable: library, no interface.
+      A lens you did not get to says unswept, and why.}}</p>
+
+    <div class="clean">
+      <h3>Derived independently, not read off the comments</h3>
+      <ul>
+        <li><strong>{{Subject}}.</strong> {{What you checked it against — an independent derivation, a known identity, a brute-force search — and the tolerance it held to.}}</li>
+      </ul>
+    </div>
+  </section>
+
+  <div class="method">
+    <div class="h">Method</div>
+    <p>
+      {{How many reviewers, along which axes, and what the verification pass
+      was instructed to do, and which verification protocol ran. Give the claim
+      ledger in its four words: how many raised, confirmed, refuted, open.}}
+    </p>
+    <p>
+      Findings marked <span class="repro">Reproduced</span> {{were re-derived
+      outside the review agents — say exactly how.}}
+    </p>
+    <div class="h">{{Second round, and the corrections}}</div>
+    <p>
+      {{What a deeper adversarial round changed, including severities
+      re-graded downward. Record your own errors here in plain terms —
+      a register that never corrects itself is not credible.}}
+    </p>
+  </div>
+
+</div>
+<script>
+(function () {
+  // Severity-agnostic: the filter derives its severities from the entries actually
+  // present, so adding data-sev="high" needs no change here. Hardcoding the list is
+  // how High findings end up silently hidden.
+  var reg = document.getElementById('reg');
+  var shown = document.getElementById('shown');
+  if (!reg || !shown) return;   // sections are deletable; filtering just stands down
+  var chips = Array.prototype.slice.call(document.querySelectorAll('.chip'));
+  var items = Array.prototype.slice.call(reg.querySelectorAll('.find'));
+
+  // LOCALIZE these two for a non-English register.
+  var fmtAll = function (n) { return n + ' entries'; };
+  var fmtSome = function (n, total) { return n + ' of ' + total + ' entries'; };
+
+  var active = {};
+  items.forEach(function (el) { active[el.dataset.sev] = true; });
+  var sevs = Object.keys(active);
+
+  function allOn() { return sevs.every(function (s) { return active[s]; }); }
+  function noneOn() { return sevs.every(function (s) { return !active[s]; }); }
+
+  function render() {
+    var n = 0;
+    items.forEach(function (el) {
+      var on = active[el.dataset.sev] !== false;
+      el.hidden = !on;
+      if (on) n++;
+    });
+    shown.textContent = n === items.length
+      ? fmtAll(items.length)
+      : fmtSome(n, items.length);
+    chips.forEach(function (c) {
+      var f = c.dataset.f;
+      c.setAttribute('aria-pressed', String(f === 'all' ? allOn() : !!active[f]));
+      // A chip for a severity with no entries has nothing to filter.
+      if (f !== 'all' && !(f in active)) c.hidden = true;
+    });
+  }
+
+  chips.forEach(function (c) {
+    c.addEventListener('click', function () {
+      var f = c.dataset.f;
+      if (f === 'all') {
+        var on = !allOn();
+        sevs.forEach(function (s) { active[s] = on; });
+      } else if (f in active) {
+        active[f] = !active[f];
+      }
+      // Never leave the register empty — an all-off state reads as a broken page.
+      if (noneOn()) sevs.forEach(function (s) { active[s] = true; });
+      render();
+    });
+  });
+
+  render();
+})();
+</script>

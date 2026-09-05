@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "WebSearch",
+      "WebFetch",
+      "Agent",
+      "Bash(ls:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)",
+      "Bash(rg:*)", "Bash(grep:*)", "Bash(find:*)", "Bash(tree:*)",
+      "Bash(wc:*)", "Bash(stat:*)", "Bash(which:*)",
+      "Bash(whereis:*)", "Bash(df:*)", "Bash(less:*)",
+      "Bash(top:*)", "Bash(lscpu:*)", "Bash(lsmem:*)",
+      "Bash(md5sum:*)", "Bash(sha256sum:*)", "Bash(cmp:*)",
+      "Bash(basename:*)", "Bash(dirname:*)", "Bash(realpath:*)",
+      "Bash(cut:*)", "Bash(tr:*)", "Bash(nl:*)", "Bash(column:*)",
+      "Bash(printf:*)", "Bash(seq:*)",
+      "Bash(uname:*)", "Bash(whoami)", "Bash(hostname)",
+      "Bash(date)", "Bash(date +*)",
+      "Bash(comm:*)", "Bash(join:*)", "Bash(paste:*)",
+      "Bash(fold:*)", "Bash(fmt:*)", "Bash(expand:*)", "Bash(unexpand:*)",
+      "Bash(base64:*)", "Bash(sha1sum:*)", "Bash(cksum:*)",
+      "Bash(readlink:*)", "Bash(printenv:*)",
+      "Bash(id:*)", "Bash(groups:*)", "Bash(ps:*)",
+      "Bash(node --version)", "Bash(npm --version)", "Bash(npm ls:*)",
+      "Bash(git status)", "Bash(git log:*)", "Bash(git diff:*)", "Bash(git show:*)",
+      "Bash(pytest:*)", "Bash(python -m pytest:*)", "Bash(npm test:*)",
+      "Bash(node --test:*)", "Bash(node --check:*)",
+      "Bash(latexmk:*)"
+    ],
+    "ask": [
+      "Bash(make:*)",
+      "Bash(pip install:*)", "Bash(npm install:*)", "Bash(npm ci)",
+      "Bash(curl:*)", "Bash(wget:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout --:*)",
+      "Bash(rm *)",
+      "Read(./data/holdout/**)"
+    ],
+    "deny": [
+      "Bash(sudo:*)", "Bash(rm -rf:*)", "Bash(git reset --hard:*)",
+      "Edit(./data/raw/**)", "Write(./data/raw/**)",
+      "Read(./.env)", "Read(./.env.*)", "Read(./secrets/**)",
+      "Read(~/.ssh/**)", "Read(./**/*.pem)",
+      "Read(~/.claude/.credentials.json)", "Read(~/.claude/**/.credentials.json)"
+    ]
+  }
+}
