@@ -66,15 +66,13 @@
 
     const canvas = document.getElementById('sky');
 
-    // Camera sits barely above the disk plane, so the lensed disk closes into a
-    // near-symmetric ring with a thin needle of light through the middle. It
-    // cannot be exactly 0: in-plane rays never cross the disk, which would drop
-    // the near side of it entirely.
-    const DIST = 20.0;
-    const INCL = 3.0 * Math.PI / 180;
+    // A slightly elevated view separates the near disk from its lensed image.
+    // Schwarzschild geometry; the warm visible palette is an artistic mapping.
+    const DIST = 22.0;
+    const INCL = 9.0 * Math.PI / 180;
     const CAM = new THREE.Vector3(0, DIST * Math.sin(INCL), -DIST * Math.cos(INCL));
-    const FOCAL = 1.6;                 // 1 / tan(fovY / 2)  ->  fovY ~ 64 deg
-    const MAX_PIXELS = 9.0e6;          // backstop for very large displays only
+    const FOCAL = 1.3;                 // half-height coordinates: fovY ~ 42 deg
+    const MAX_PIXELS = 2.4e6;          // bound the ray integration and bloom cost
 
     const fwd   = CAM.clone().negate().normalize();
     const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), fwd).normalize();
@@ -109,21 +107,14 @@
 
       const float RS    = 1.0;    // event horizon
       const float R_IN  = 3.00;   // inner edge of the disk: the ISCO, 6M
-      const float R_OUT = 5.80;   // outer edge
+      const float R_OUT = 10.0;   // outer edge
       const float R_ESC = 28.0;   // treat the ray as escaped past this
-      const float SPIN  = 0.55;   // inner rim completes a turn in ~40 s
+      const float SPIN  = 0.85;   // visual time scale; differential orbital motion
 
       float hash13(vec3 p) {
         p = fract(p * 0.1031);
         p += dot(p, p.zyx + 31.32);
         return fract((p.x + p.y) * p.z);
-      }
-
-      vec3 hash33(vec3 p) {
-        p = vec3(dot(p, vec3(127.1, 311.7,  74.7)),
-                 dot(p, vec3(269.5, 183.3, 246.1)),
-                 dot(p, vec3(113.5, 271.9, 124.6)));
-        return fract(sin(p) * 43758.5453123);
       }
 
       float vnoise(vec3 p) {
@@ -165,114 +156,79 @@
         return -1.5 * h2 * p / (r2 * r2 * sqrt(r2));
       }
 
-      // One octave of stars. sigma follows the pixel footprint so the dots stay
-      // about a pixel wide instead of shimmering when the buffer is resized.
-      vec3 starLayer(vec3 d, float scale, float thresh, float pxCells) {
-        vec3 id = floor(d * scale);
-        vec3 f  = fract(d * scale) - 0.5;
-        vec3 r  = hash33(id);
-        if (r.z < thresh) return vec3(0.0);
-
-        float sigma = max(pxCells * 0.85, 0.030);
-        float dist  = length(f - (r - 0.5) * 0.60);
-        float core  = exp(-(dist * dist) / (2.0 * sigma * sigma));
-
-        float mag  = pow(hash13(id + 7.3), 4.0);
-        float tint = hash13(id + 19.1);
-        vec3  hue  = mix(vec3(0.74, 0.83, 1.00), vec3(1.00, 0.86, 0.66),
-                         smoothstep(0.30, 0.85, tint));
-        hue = mix(vec3(1.0), hue, 0.6);
-
-        float tw = 1.0 + 0.15 * sin(uTime * (0.5 + r.x * 1.3) + r.y * 40.0);
-        return hue * core * (0.10 + mag * 1.45) * tw;
+      // Fixed angular stars, convolved with a pixel footprint. Normalizing the
+      // Gaussian keeps their energy from growing when rendering at lower quality.
+      vec3 starLayer(vec3 d, float scale, float threshold, float pxAng) {
+        vec2 uv = vec2(atan(d.z, d.x), asin(clamp(d.y, -1.0, 1.0))) * scale;
+        vec2 id = floor(uv);
+        float seed = hash13(vec3(id, scale));
+        if (seed < threshold) return vec3(0.0);
+        vec2 center = vec2(hash13(vec3(id, 2.7)), hash13(vec3(id, 9.1)));
+        vec2 delta = fract(uv) - mix(vec2(0.2), vec2(0.8), center);
+        float baseVariance = 0.0064;
+        float footprint = pxAng * scale;
+        float variance = baseVariance + footprint * footprint / 12.0;
+        float light = exp(-0.5 * dot(delta, delta) / variance) * baseVariance / variance;
+        float magnitude = 0.12 + 2.8 * pow(hash13(vec3(id, 19.3)), 8.0);
+        vec3 tint = mix(vec3(0.76, 0.84, 1.0), vec3(1.0, 0.87, 0.72), center.x);
+        return tint * light * magnitude;
       }
 
-      // A distant edge-on galaxy: a flat elongated smudge with a soft halo.
-      // d is already isotropic in pixels, measured in units of half-height.
-      vec3 galaxy(vec2 d, float rot, float size) {
-        float cs = cos(rot), sn = sin(rot);
-        vec2 q = vec2(d.x * cs - d.y * sn, d.x * sn + d.y * cs) / size;
-        q.y *= 4.5;                       // flatten it into a disc seen edge-on
-        float r2 = dot(q, q);
-        return vec3(0.62, 0.52, 0.42) * exp(-r2 * 3.2) * 0.55
-             + vec3(0.30, 0.34, 0.46) * exp(-r2 * 0.70) * 0.16;
-      }
-
-      // Parked in pn space so the composition holds at any aspect ratio; only
-      // the delta is corrected so they do not stretch on wide viewports.
-      vec3 galaxies(vec2 pn, float aspect) {
-        vec2 k = vec2(aspect, 1.0);
-        return galaxy((pn - vec2(-0.80,  0.42)) * k, -0.38, 0.150)
-             + galaxy((pn - vec2( 0.62,  0.55)) * k,  0.30, 0.115)
-             + galaxy((pn - vec2( 0.90,  0.02)) * k, -0.22, 0.135)
-             + galaxy((pn - vec2( 0.74, -0.58)) * k,  0.34, 0.100);
-      }
-
-      vec3 sky(vec3 d, vec2 p, float pxAng) {
-        vec3 c = vec3(0.0);
-        c += starLayer(d, 140.0, 0.966, pxAng * 140.0) * 1.00;
-        c += starLayer(d, 340.0, 0.948, pxAng * 340.0) * 0.55;
-        c += starLayer(d, 760.0, 0.936, pxAng * 760.0) * 0.28;
-
-        // Warm dust bank in the upper left, faint cold wash lower right.
-        float n  = fbm(d * 2.1 + 11.3, 4);
-        float n2 = fbm(d * 5.3 +  3.7, 4);
-
-        float warm = smoothstep(0.30, 1.05, n * 0.75 + n2 * 0.35);
-        warm *= smoothstep(0.75, -0.35, p.x * 1.1 - p.y * 0.9);
-        c += vec3(0.34, 0.19, 0.11) * warm * 0.10;
-
-        float cold = smoothstep(0.42, 1.00, n2 * 0.8 + n * 0.3);
-        cold *= smoothstep(-0.55, 0.85, p.x * 0.8 + p.y * 0.6);
-        c += vec3(0.10, 0.13, 0.26) * cold * 0.07;
-
+      vec3 sky(vec3 d, float pxAng) {
+        vec3 c = starLayer(d, 160.0, 0.994, pxAng);
+        c += starLayer(d, 310.0, 0.997, pxAng) * 0.4;
+        // Very faint interstellar dust; all background light follows the ray.
+        float dust = fbm(d * 3.0 + 11.3, 3);
+        float band = exp(-18.0 * pow(d.y + d.x * 0.25, 2.0));
+        c += vec3(0.11, 0.13, 0.18) * smoothstep(0.35, 0.8, dust) * band * 0.012;
         return c;
       }
 
-      // Emission picked up where the ray crosses the disk plane. Called once per
-      // crossing, so the far side lensed over the top adds itself on its own.
-      vec3 diskSample(vec3 hit, vec3 vel) {
+      float diskNoise(float r, float phi, float age, float frequency, int octaves) {
+        float a = phi - SPIN / (r * sqrt(r)) * age;
+        vec3 q = vec3(cos(a) * 2.5, sin(a) * 2.5, r * frequency);
+        return fbm(q, octaves) * (octaves == 2 ? 1.1667 : 1.0);
+      }
+
+      // Emission and opacity at a disk crossing, accumulated front to back.
+      vec4 diskSample(vec3 hit, vec3 vel) {
         float r = length(hit);
         float u = (r - R_IN) / (R_OUT - R_IN);
-        if (u < 0.0 || u > 1.0) return vec3(0.0);
+        if (u < 0.0 || u > 1.0) return vec4(0.0);
 
-        float phi   = atan(hit.z, hit.x);
-        float omega = SPIN / (r * sqrt(r));            // Keplerian: inner rim leads
-        float a     = phi - omega * uTime;
+        float phi = atan(hit.z, hit.x);
+        float resolution = min(uRes.x, uRes.y);
+        float frequency = mix(3.0, 6.0, smoothstep(400.0, 1000.0, resolution));
+        int octaves = resolution < 700.0 ? 2 : 3;
+        // Two staggered flow lifetimes keep differential shear from winding the
+        // texture into sub-pixel noise over time. Each resets at zero weight.
+        float age = mod(uTime, 48.0);
+        float otherAge = mod(uTime + 24.0, 48.0);
+        float blend = 0.5 - 0.5 * cos(age * 6.2831853 / 48.0);
+        float n = mix(diskNoise(r, phi, otherAge, frequency, octaves),
+                      diskNoise(r, phi, age, frequency, octaves), blend);
+        float density = mix(0.18, 1.45, smoothstep(0.20, 0.72, n));
 
-        // Sampling on a circle in xy keeps the texture seamless across phi = +-pi.
-        // Along the lensed arc, screen position tracks the disk's AZIMUTH, so a
-        // high azimuthal frequency against a low radial one is what draws the
-        // fine comb of streaks across the ring - and it sweeps visibly as the
-        // disk turns. Low-frequency blobs rotate almost invisibly.
-        vec3 q = vec3(cos(a), sin(a), 0.0) * 9.0 + vec3(0.0, 0.0, r * 0.9);
-        float n = fbm(q, 3);
-        float dens = 0.45 + 0.55 * n;
+        // Zero-torque thin-disk radial flux peaks outside the inner boundary.
+        float x = r / R_IN;
+        float flux = pow(x, -3.0) * max(1.0 - inversesqrt(x), 0.0) / 0.05665;
+        float temperature = pow(flux, 0.25);
+        float edge = smoothstep(0.0, 0.035, u) * (1.0 - smoothstep(0.65, 1.0, u));
 
-        float radial = smoothstep(0.0, 0.08, u) * pow(1.0 - u, 3.0);
-        float emit = radial * dens * (9.5 / (0.30 + r * 0.20));
-
-        // Optically thin slab: a grazing ray travels further through it.
         vec3 nv = normalize(vel);
-        emit *= clamp(0.055 / max(abs(nv.y), 0.004), 0.40, 2.5);
+        vec3 vhat = normalize(cross(hit, vec3(0.0, 1.0, 0.0)));
+        float beta = sqrt(1.0 / (2.0 * (r - RS)));
+        float dop = sqrt(1.0 - beta * beta) / (1.0 - dot(vhat * beta, -nv));
+        float shift = dop * sqrt(1.0 - RS / r);
 
-        vec3 col = mix(vec3(1.00, 0.93, 0.82), vec3(1.00, 0.64, 0.28),
-                       smoothstep(0.0, 0.28, u));
-        col = mix(col, vec3(0.80, 0.30, 0.09), smoothstep(0.28, 1.0, u));
-
-        // Relativistic beaming: the limb rotating toward us runs far brighter.
-        vec3  vhat = normalize(cross(hit, vec3(0.0, 1.0, 0.0)));
-        float beta = clamp(0.46 / sqrt(r), 0.0, 0.80);
-        float gam  = 1.0 / sqrt(max(1.0 - beta * beta, 1e-3));
-        float dop  = clamp(1.0 / (gam * (1.0 - dot(vhat * beta, -nv))), 0.42, 2.80);
-        float grav = sqrt(max(1.0 - RS / r, 0.02));    // gravitational redshift
-
-        // Brightness follows the beaming, but the receding limb is tinted cool
-        // rather than red: that cold rim is the reference art's look, not physics.
-        col = mix(col, vec3(1.00, 0.97, 0.92), clamp((dop - 1.0) * 0.50, 0.0, 0.45));
-        col = mix(col, vec3(0.72, 0.80, 1.00), clamp((1.0 - dop) * 0.85, 0.0, 0.55));
-
-        return col * emit * pow(dop, 2.6) * pow(grav, 1.4);
+        // Map temperature to visible amber/ivory; approaching gas is brighter
+        // and hotter, while the receding side remains dimmer and warmer.
+        float heat = clamp(temperature * pow(shift, 0.35), 0.0, 1.3);
+        vec3 col = mix(vec3(0.48, 0.055, 0.008), vec3(1.0, 0.48, 0.12), smoothstep(0.30, 0.78, heat));
+        col = mix(col, vec3(1.0, 0.88, 0.64), smoothstep(0.78, 1.20, heat));
+        float emission = 1.6 * flux * density * pow(shift, 3.0);
+        float opacity = edge * (1.0 - exp(-1.8 / max(abs(nv.y), 0.12)));
+        return vec4(col * emission, opacity);
       }
 
       void main() {
@@ -285,10 +241,7 @@
         vec2  p  = c / s;
         vec2  pn = c / uRes * 2.0;
 
-        // Sub-pixel jitter turns the edge-on disk aliasing into grain.
-        vec2 jit = (vec2(hash13(vec3(gl_FragCoord.xy, 1.0)),
-                         hash13(vec3(gl_FragCoord.yx, 7.0))) - 0.5) / s;
-        vec2 pc = p + jit - uCenter;
+        vec2 pc = p - uCenter;
 
         vec3 dir = normalize(uRight * pc.x + uUp * pc.y + uFwd * uFocal);
         vec3 pos = uCamPos;
@@ -299,6 +252,7 @@
         float h2 = dot(L, L);
 
         vec3 acc = vec3(0.0);
+        float transmission = 1.0;
         bool escaped = false;
 
         for (int i = 0; i < 256; i++) {
@@ -318,7 +272,10 @@
 
           if (prev.y * pos.y < 0.0) {
             float t = prev.y / (prev.y - pos.y);
-            acc += diskSample(mix(prev, pos, t), dir);
+            vec4 disk = diskSample(mix(prev, pos, t), dir);
+            acc += transmission * disk.rgb * disk.a;
+            transmission *= 1.0 - disk.a;
+            if (transmission < 0.005) break;
           }
         }
 
@@ -326,12 +283,10 @@
         // A ray still winding when the step budget runs out is captured in
         // practice; calling it escaped leaks grey sky inside the shadow.
         if (escaped) {
-          col += sky(normalize(dir), p, 1.0 / (s * uFocal));
-          col += galaxies(pn, uRes.x / uRes.y);
+          col += transmission * sky(normalize(dir), 1.0 / (s * uFocal));
         }
 
         col *= clamp(1.0 - 0.30 * pow(length(pn * vec2(0.86, 1.0)), 2.4), 0.0, 1.0);
-        col += (hash13(vec3(gl_FragCoord.xy, 3.0)) - 0.5) * 0.008;
 
         gl_FragColor = vec4(max(col, 0.0), 1.0);
       }
@@ -351,54 +306,70 @@
 
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.15, 2.50);
+    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.14, 0.15, 1.40);
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
 
     let quality = 1;   // resolution scale, ratcheted down only if the GPU lags
     let lastW = 0, lastH = 0, lastDpr = 0;
+    let frameId = 0, contextLost = false;
+    let elapsed = 0, last = performance.now();
+    let sampled = 0, sampleAcc = 0, stepDowns = 0;
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+    function requestFrame() {
+      if (!frameId && !contextLost && !document.hidden) frameId = requestAnimationFrame(frame);
+    }
+
+    function pause() {
+      cancelAnimationFrame(frameId);
+      frameId = 0;
+      last = performance.now();
+      sampled = 0; sampleAcc = 0;
+    }
 
     function resize() {
+      if (contextLost) return;
       // Never size to 0: a zero-size attachment makes every framebuffer
       // incomplete, and the composer does not recover once that has happened.
-      const w = Math.max(1, window.innerWidth  || document.documentElement.clientWidth);
-      const h = Math.max(1, window.innerHeight || document.documentElement.clientHeight);
-      // Match the display 1:1 by default. Rendering below devicePixelRatio and
-      // letting the browser upscale is what makes the ring look soft.
-      const dpr = Math.max(0.6, Math.min((window.devicePixelRatio || 1) * quality, 2,
-                                         Math.sqrt(MAX_PIXELS / (w * h))));
+      const w = Math.max(1, window.innerWidth  || document.documentElement.clientWidth || 1);
+      const h = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+      // Apply quality after the display/pixel caps so every step lowers the load.
+      const baseDpr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(MAX_PIXELS / (w * h)));
+      const dpr = baseDpr * quality;
 
       // Reallocating the composer targets is not free, and ResizeObserver also
       // fires once on observe.
       if (w === lastW && h === lastH && dpr === lastDpr) return;
       lastW = w; lastH = h; lastDpr = dpr;
 
-      renderer.setPixelRatio(dpr);
-      renderer.setSize(w, h, false);
-      composer.setPixelRatio(dpr);
-      composer.setSize(w, h);
+      // Use integer buffer sizes at pixel ratio 1, including in a collapsed view.
+      const renderW = Math.min(MAX_PIXELS, Math.max(1, Math.floor(w * dpr)));
+      const renderH = Math.min(Math.floor(MAX_PIXELS / renderW), Math.max(1, Math.floor(h * dpr)));
+      renderer.setSize(renderW, renderH, false);
+      composer.setSize(renderW, renderH);
+      uniforms.uRes.value.set(renderW, renderH);
 
-      uniforms.uRes.value.set(w * dpr, h * dpr);
-
-      // Park the hole right of centre on wide viewports, dead centre on phones.
+      // Leave room for the outer disk, including in a portrait viewport.
       const aspect = w / h;
-      const shift = THREE.MathUtils.smoothstep(aspect, 0.95, 1.50) * 0.15 * aspect;
+      const landscape = THREE.MathUtils.smoothstep(aspect, 0.85, 1.50);
+      const shift = landscape * 0.04 * aspect;
       uniforms.uCenter.value.set(shift, 0);
+      uniforms.uFocal.value = THREE.MathUtils.lerp(0.88, FOCAL, landscape);
+      requestFrame();
     }
 
-    let elapsed = 0;
-    let last = performance.now();
-    let sampled = 0, sampleAcc = 0, stepDowns = 0;
-
-    function frame(now = last) {
-      requestAnimationFrame(frame);
+    function frame(now) {
+      frameId = 0;
+      if (contextLost || document.hidden) return;
       // Clamped so a backgrounded tab does not resume with a jump in the disk.
       const dt = Math.min((now - last) / 1000, 0.1);
       last = now;
-      elapsed += dt;
+      if (!reducedMotion.matches) elapsed += dt;
       uniforms.uTime.value = elapsed;
       composer.render();
       canvas.classList.add('ready');
+      if (reducedMotion.matches) return;
 
       // Full resolution is the default; step down when a short window shows the
       // machine is not holding ~45 fps. A vsynced display quantises dt, so a
@@ -411,13 +382,30 @@
           sampled = 0; sampleAcc = 0;
         }
       }
+      requestFrame();
     }
 
-    // Without preventDefault the browser never restores a lost context and the
-    // canvas stays black for good. Driver resets and mobile backgrounding do
-    // happen; forcing lastW to 0 makes the restore path rebuild the targets.
-    canvas.addEventListener('webglcontextlost', e => e.preventDefault());
-    canvas.addEventListener('webglcontextrestored', () => { lastW = 0; resize(); });
+    canvas.addEventListener('webglcontextlost', e => {
+      e.preventDefault();
+      contextLost = true;
+      pause();
+      canvas.classList.remove('ready');
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      contextLost = false;
+      composer.reset();
+      lastW = 0;
+      last = performance.now();
+      resize();
+    });
+    document.addEventListener('visibilitychange', () => {
+      pause();
+      if (!document.hidden) { resize(); requestFrame(); }
+    });
+    reducedMotion.addEventListener('change', () => {
+      pause();
+      requestFrame();
+    });
 
     resize();
     addEventListener('resize', resize);
@@ -426,7 +414,6 @@
     // the scene would stay stuck at the 1x1 floor.
     new ResizeObserver(resize).observe(document.documentElement);
 
-    frame();
   </script>
 </body>
 </html>
