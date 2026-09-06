@@ -1,0 +1,8 @@
+{
+  "name": "settle-ledger",
+  "version": "1.2.0",
+  "description": "Trade netting, fee allocation and append-only settlement ledger",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": { "test": "node --test" }
+}

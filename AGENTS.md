@@ -61,7 +61,7 @@ For multi-step tasks, state a brief plan:
 - Avoid shallow answers, vague generalities, and empty stylistic flourishes. Prefer substance, clarity, and correctness.
 - When solving problems, aim for solutions that are not only theoretically sound but also practical and implementable.
 - Fully understand the user's intent, goals, requirements, constraints, and expected outcome before beginning work.
-- Ask clarifying questions as necessary to reach a reliable understanding of the task if the requirements is unclear, ambiguous, incomplete, ambiguous, or could reasonably mean multiple things.
+- Ask clarifying questions as necessary to reach a reliable understanding of the task if the requirements are unclear, ambiguous, incomplete, or could reasonably mean multiple things.
 
 ## Working rules
 - When coding, make the smallest safe change that solves the task.
@@ -75,7 +75,7 @@ For multi-step tasks, state a brief plan:
 - This autonomy covers only read-only, reversible actions (file reads, searches, doc fetches, tests, dry runs); installing dependencies, state-changing network calls (POST/PUT/DELETE), commits, deletions, or sending credentials or unpublished data externally still require explicit approval.
 
 ## Development Commands
-- Do not modify code without explicitly permission for implementation.
+- Do not modify code without explicit permission to implement.
 - Do not assume permission to install software, packages, libraries, components, SDKs, CLIs, or other system dependencies unless explicitly authorized.
 - Do not modify files, install dependencies, delete content, change system state, access the network without explicit user approval.
 - Non-destructive standard shell commands such as `cd`, `ls`, `pwd`, `head`, `tail`, `rg`, `wc`, `stat`, `tree`, `which`, `whereis`, `du`, `df`, `grep`, `top`, `lscpu`,  `lsmem`,  `less` and `find` may be used without prior approval.

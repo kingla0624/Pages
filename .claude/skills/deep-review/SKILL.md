@@ -5,10 +5,9 @@ description: Engineering-grade code audit across correctness, security, performa
 
 # Deep Review
 
-A quick review reads a diff and reports what looks wrong. This produces something
-different: a register of findings that have each survived an attempt to destroy them,
-graded by how reachable they actually are, with the reviewer's own mistakes recorded
-in the open.
+A quick review reads a diff and reports what looks wrong. This produces a register
+of findings graded by measured reachability, with the reviewer's own mistakes
+recorded in the open.
 
 The difference is not thoroughness. It is that **a claim only enters the register
 after someone tried to refute it and failed.**
@@ -19,17 +18,6 @@ along which lines, read `references/review-axes.md`; for what to read for in a
 specific language or runtime, `references/stack-notes.md`. The HTML template is
 `assets/findings-register.html`, and `scripts/mutate.mjs` measures a suite by
 breaking the code under it (`node scripts/mutate.mjs --help`).
-
-## Why this is shaped the way it is
-
-Three failure modes ruin code reviews, and each phase below exists to defeat one:
-
-- **Plausible-but-wrong findings.** A model reading code generates confident claims
-  faster than it verifies them. Defeated by the refutation pass (phase 4).
-- **Severity inflation.** Everything looks High when you have just understood it.
-  Defeated by measuring reachability instead of describing it (phase 5).
-- **Reading the comments instead of the code.** Comments drift; the code is the
-  system. Defeated by independent derivation (phase 3).
 
 Scale the effort to the stakes — measured, the full method costs about 1.5x a plain
 careful review. A 400-line utility wants two or three axes, one reviewer, serial
@@ -45,9 +33,7 @@ actually covers.
 Run the build and the test suite yourself. Do not take the README's word for it —
 noting that both execute the repository's own code: on a codebase you have no reason
 to trust, run them sandboxed, or ask first. Take coverage too if the runner offers
-it. An uncovered line is not a defect, but it is a
-map of where to look — "the path carrying the whole overnight volume has no test
-touching it" is a finding you can only make with the number in hand.
+it. An uncovered line is not a defect, but it is a map of where to look.
 
 Some of these will not apply. A directory that is not a repository has no commit to
 anchor to; a zero-dependency package has no build to be clean. Record those as not
@@ -66,10 +52,9 @@ Do not apply a fixed checklist. Read the directory structure and the entry point
 first, then carve the repository into axes that match how *this* system is actually
 built — subsystem crossed with concern.
 
-Size each axis so one reviewer can hold it in a single context: roughly one
-subsystem, or one cross-cutting concern swept across all of them. Overlap between
-axes is fine and useful — two reviewers finding the same defect independently is
-evidence, and duplicates get merged later.
+Size each axis so one reviewer can hold it in a single context. Overlap is useful —
+two reviewers reaching the same defect independently is evidence, and duplicates get
+merged in phase 4.
 
 Always include one axis for the test suite itself and one for cross-cutting drift
 (comments, docs and user-facing copy that no longer describe the code). Both
@@ -124,10 +109,9 @@ is not evidence that it does.
 **Break the code to test the tests.** A green suite is evidence only if it can go red.
 On the axis that reviews the tests, mutate the source on purpose — invert a return,
 drop a sign, delete a clamp — and see which mutations the suite still passes. Every
-survivor is a coverage claim no amount of reading the tests would have produced, and
-in practice this is the most productive single probe in the review: "the correct fix
-for finding 01, applied, leaves all tests green" tells a reader more about their suite
-than any coverage percentage.
+survivor is a coverage claim no amount of reading the tests would have produced —
+"the correct fix for finding 01, applied, leaves all tests green" tells a reader more
+about their suite than any coverage percentage.
 
 Use `scripts/mutate.mjs` rather than writing a harness. Hand-rolled ones tend to parse
 the runner's output to decide whether a mutant died, which breaks on locale, colour
@@ -144,8 +128,7 @@ every other finding stands unprotected by regression.
 
 **Say what is correct, too.** Have each reviewer report the parts it checked and
 found sound, especially the parts most likely to be quietly wrong. These become the
-"Verified correct" section, and they are why a reader can trust the rest. A report
-that lists only problems gives no signal about coverage.
+"Verified correct" section.
 
 ## Phase 4 — Adversarial verification
 
@@ -177,8 +160,7 @@ words are the claim vocabulary everywhere in the report — "survived" is not a 
 state, it is confirmed. A register reporting "3 refuted" is more credible than one
 reporting none.
 
-After verification, merge duplicates — overlapping axes make them certain, and they
-are corroboration, not noise. Two claims are one finding only when they name the
+After verification, merge duplicates. Two claims are one finding only when they name the
 same mechanism at the same site **for the same reason**; the merged entry carries
 every location and says two reviewers reached it independently. Same line, two
 mechanisms, is two findings — a merge there deletes one of them, and the one that
@@ -196,10 +178,9 @@ adjective.
 
 Before filing anything above Low, state the shortest path to it from a default state.
 Count it in the unit the thing under review actually has — taps for an app, API calls
-for a library, records for a batch job — and say which unit you picked. A reader of a
-library audit will otherwise read "two calls" as "two taps" and weight it far too
-heavily. "Reachable in one tap from an ordinary session" is a severity argument.
-"Could occur under certain conditions" is not.
+for a library, records for a batch job — and say which unit you picked, or a reader
+weights "two calls" as if it were "two taps". "Reachable in one tap from an ordinary
+session" is a severity argument. "Could occur under certain conditions" is not.
 
 When you cannot find a path, that **caps the severity — it does not delete the
 finding.** File it as Low and say plainly that no reachable path was found. An
@@ -228,7 +209,7 @@ Re-verify the top findings before any code changes, with two skeptics each and a
 adjudicator that settles disagreements against the source.
 
 Record every re-grade visibly on the finding (`re-graded from High`). Silently
-lowering a severity looks like hiding; showing it looks like rigour, and it is.
+lowering a severity looks like hiding; showing it is the rigour.
 
 Also check whether the entry is a defect at all. Some are decisions the owner already
 made. File those as `Owner's call` with the evidence for why it looks deliberate, or
@@ -238,16 +219,14 @@ leave them out.
 
 For findings that will drive real work, re-derive them outside the reviewing agents:
 drive the real object, run a brute-force search, inspect the built artifact. Mark
-only these `Reproduced`, and say in the Method section exactly how.
-
-The badge is worth something only if it is scarce. Do not mark a finding reproduced
-because a reviewing agent said it reproduced.
+only these `Reproduced`, and say in the Method section exactly how. The badge is
+worth something only if it is scarce: do not mark a finding reproduced because a
+reviewing agent said it reproduced.
 
 ## Phase 7 — If fixing, mutation-verify the fix
 
-Mutation appeared in phase 3 measuring the suite as a whole. Here it does a narrower
-job: proving the test you just wrote actually pins the fix, rather than passing for
-some unrelated reason.
+Phase 3 used mutation to measure the suite; here it proves the test you just wrote
+actually pins the fix.
 
 Only fix what the user asked to have fixed. When you do:
 
@@ -320,8 +299,6 @@ re-checking it.
 A repository too large to read completely is the same decision made up front: choose
 subsystems by risk — where money or data can be corrupted, what changed most
 recently, what the user named — read those completely, and let the scope declaration
-name every directory left unread. An unread directory named in the report beats one
-silently skipped.
-
-Say what was left out. A register that silently covered less than it appears to is
-the one failure this whole method exists to prevent.
+name every directory left unread. Say what was left out: a register that silently
+covered less than it appears to is the one failure this whole method exists to
+prevent.
