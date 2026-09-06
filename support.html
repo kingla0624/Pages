@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Support — Option AI</title>
+<style>
+  :root{color-scheme:light dark;--fg:#1b1f27;--mut:#5b6472;--bg:#ffffff;--line:#e3e7ee;--accent:#1e3a8a}
+  @media (prefers-color-scheme:dark){:root{--fg:#e7ebf2;--mut:#9aa5b6;--bg:#12151b;--line:#262c37;--accent:#7cb8ff}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       -webkit-text-size-adjust:100%}
+  main{max-width:720px;margin:0 auto;padding:48px 22px 80px}
+  h1{font-size:30px;line-height:1.25;margin:0 0 6px;letter-spacing:-.02em}
+  .sub{color:var(--mut);margin:0 0 34px;font-size:15px}
+  h2{font-size:19px;margin:38px 0 10px;letter-spacing:-.01em}
+  h3{font-size:16px;margin:22px 0 4px;font-weight:650}
+  ul{padding-left:22px;margin:10px 0}
+  li{margin:6px 0}
+  .card{border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:0 0 10px}
+  .card p{margin:6px 0 0}
+  .mail{font-size:19px;font-weight:650;letter-spacing:-.01em}
+  .q{color:var(--mut);font-size:15px;margin:2px 0 0}
+  dl{margin:10px 0}
+  dt{font-weight:650;margin:18px 0 2px}
+  dd{margin:0;color:var(--fg)}
+  footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);color:var(--mut);font-size:14px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Option AI — Support</h1>
+<p class="sub">Questions, bug reports and feature requests</p>
+
+<div class="card">
+  <p class="mail"><a href="mailto:REPLACE_WITH_YOUR_EMAIL">REPLACE_WITH_YOUR_EMAIL</a></p>
+  <p class="q">Every message is read. When reporting a problem, please include your iPhone model, your iOS version, and what you were doing when it happened — it makes a fix far more likely.</p>
+</div>
+
+<h2>What this app is</h2>
+<p>Option AI is an offline sandbox for studying option strategies. It prices structures with the Black-Scholes-Merton model, draws payoff and Greek profiles, and lets you take them apart — on a self-contained simulated instrument. It is not connected to any exchange, broker or data vendor, it executes no trades, and it offers no investment advice.</p>
+
+<h2>Frequently asked</h2>
+
+<dl>
+
+<dt>Why doesn't the price match the real market?</dt>
+<dd>Because it is not a market price. The underlying is generated on your device by a simulation, so you can experiment freely without a data subscription. It is not a quote, and no number in the app comes from a real exchange, broker or vendor.</dd>
+
+<dt>Can I connect my broker, or import my real positions?</dt>
+<dd>No. The app has no network access at all — there is no account, no sign-in and no way to link an external service. Everything happens on your device.</dd>
+
+<dt>I edited a built-in strategy and my changes vanished. Why?</dt>
+<dd>Edits to a built-in template are session-only by design, and are also cleared when you change the base price or reset market settings. To keep them, use <em>Save edits as new strategy</em> — that copies the legs into one of your own slots, which is saved permanently.</dd>
+
+<dt>My saved positions disappeared.</dt>
+<dd>Saved positions are tied to the base price they were taken at, and are hidden while the base price is set to something else. Set the base price back and they reappear. They are also capped at six — saving a seventh replaces the oldest.</dd>
+
+<dt>Why can I only keep six custom strategies?</dt>
+<dd>The app deliberately keeps a small, tidy set: up to six of your own strategies, each with up to six legs, and up to six saved positions. Delete one to make room for another.</dd>
+
+<dt>Does it support American-style options or early exercise?</dt>
+<dd>No. Pricing is European exercise only, using Black-Scholes-Merton with a continuous dividend yield. There is no early-exercise, assignment or pin-risk modelling. Choosing the Futures underlying type locks the carry to the risk-free rate, which makes the same formula behave as Black-76.</dd>
+
+<dt>What does "probability of profit" actually mean here?</dt>
+<dd>It is a risk-neutral, model-implied figure: the probability that the payoff finishes above zero under the model's own lognormal terminal distribution, integrated between the breakevens. It is meant for comparing structures against each other. It is not a forecast, and it is not based on any historical or market-implied distribution.</dd>
+
+<dt>Are commissions, spreads or slippage included?</dt>
+<dd>No. All values are theoretical model prices. There is no bid/ask spread, no commission, no slippage, no margin and no liquidity modelling.</dd>
+
+<dt>Is there an iPad or Mac version? A light theme? Other languages?</dt>
+<dd>Not currently. Option AI is an iPhone app, dark appearance only, with an English-only interface. If any of these matter to you, say so by email — it genuinely affects what gets built next.</dd>
+
+<dt>What data do you collect about me?</dt>
+<dd>None at all. The app has no network access, no analytics and no advertising, so nothing can leave your device. See the <a href="./">privacy policy</a> for the details.</dd>
+
+<dt>How do I delete everything the app stored?</dt>
+<dd>Delete the app from your iPhone — that permanently removes all of it. You can also clear items individually inside the app by deleting your custom strategies and saved positions, or by resetting market settings.</dd>
+
+</dl>
+
+<h2>Requirements</h2>
+<ul>
+  <li>iPhone running iOS 26 or later</li>
+  <li>No account, no subscription, no in-app purchases</li>
+  <li>No internet connection required — or used</li>
+</ul>
+
+<h2>A note on what this app is for</h2>
+<p>Option AI is a study and analysis tool. It is not investment advice, not a recommendation, and not a substitute for professional guidance. Options carry substantial risk and are not suitable for every investor. Any decision you make with real money is your own.</p>
+
+<footer>Option AI · Support · <a href="./">Privacy Policy</a> · Last updated 5 September 2026</footer>
+
+</main>
+</body>
+</html>
