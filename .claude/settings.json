@@ -6,6 +6,7 @@
       "WebSearch",
       "WebFetch",
       "Agent",
+      "mcp__Claude_Code_iOS_Simulator",
       "Bash(ls:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)",
       "Bash(rg:*)", "Bash(grep:*)", "Bash(find:*)", "Bash(tree:*)",
       "Bash(wc:*)", "Bash(stat:*)", "Bash(which:*)",
@@ -26,12 +27,13 @@
       "Bash(git status)", "Bash(git log:*)", "Bash(git diff:*)", "Bash(git show:*)",
       "Bash(pytest:*)", "Bash(python -m pytest:*)", "Bash(npm test:*)",
       "Bash(node --test:*)", "Bash(node --check:*)",
+      "Bash(curl:*)", "Bash(wget:*)",
+      "Bash(xcrun simctl list:*)", "Bash(xcrun simctl boot:*)", "Bash(xcrun simctl shutdown:*)", "Bash(xcrun simctl install:*)", "Bash(xcrun simctl uninstall:*)", "Bash(xcrun simctl launch:*)", "Bash(xcrun simctl terminate:*)", "Bash(xcrun simctl io:*)", "Bash(xcrun simctl openurl:*)", "Bash(xcrun simctl addmedia:*)",
       "Bash(latexmk:*)"
     ],
     "ask": [
       "Bash(make:*)",
       "Bash(pip install:*)", "Bash(npm install:*)", "Bash(npm ci)",
-      "Bash(curl:*)", "Bash(wget:*)",
       "Bash(git push:*)",
       "Bash(git checkout --:*)",
       "Bash(rm *)",
