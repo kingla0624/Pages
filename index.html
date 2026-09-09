@@ -110,7 +110,11 @@
       uFwd:    { value: fwd },
       uFocal:  { value: FOCAL },
       uCenter: { value: new THREE.Vector2(0, 0) },
-      uBlackbody: { value: blackbodyColors }
+      uBlackbody: { value: blackbodyColors },
+      uHit0: { value: null },
+      uHit1: { value: null },
+      uBackdrop: { value: null },
+      uOpacity1: { value: null }
     };
 
     const vert = `
@@ -129,6 +133,22 @@
       uniform float uFocal;
       uniform vec2  uCenter;
       uniform vec3  uBlackbody[32];
+
+      #ifdef CACHE_RAYS
+        layout(location = 1) out vec4 cachedHit1;
+        layout(location = 2) out vec4 cachedBackdrop;
+        layout(location = 3) out vec4 cachedOpacity1;
+        vec4 hitRecord0 = vec4(0.0);
+        vec4 hitRecord1 = vec4(0.0);
+        vec2 hitOpacity = vec2(0.0);
+        int hitCount = 0;
+      #endif
+      #ifdef SHADE_CACHED_RAYS
+        uniform highp sampler2D uHit0;
+        uniform highp sampler2D uHit1;
+        uniform highp sampler2D uBackdrop;
+        uniform highp sampler2D uOpacity1;
+      #endif
 
       const float RS    = 1.0;    // event horizon
       const float R_IN  = 3.00;   // inner edge of the disk: the ISCO, 6M
@@ -303,14 +323,9 @@
         return mix(uBlackbody[i], uBlackbody[i + 1], sampleIndex - float(i));
       }
 
-      // A gray emitting slab of finite optical depth, not an opaque SS disk.
-      // Emission and absorption are accumulated front to back at retarded times.
-      vec4 diskSample(vec3 hit, vec3 vel, float travelTime) {
-        float r = length(hit);
-        float u = (r - R_IN) / (R_OUT - R_IN);
-        if (u < 0.0 || u > 1.0) return vec4(0.0);
-
-        float phi = atan(hit.z, hit.x);
+      // Shared by the full trace and cached path; keep arithmetic/time sampling
+      // identical so both paths produce the same animated emission.
+      vec3 diskEmission(float r, float phi, float travelTime, float shift) {
         float resolution = min(uRes.x, uRes.y);
         float frequency = mix(3.0, 6.0, smoothstep(400.0, 1000.0, resolution));
         int octaves = resolution < 700.0 ? 2 : 3;
@@ -328,6 +343,23 @@
         float x = r / R_IN;
         float flux = pow(x, -3.0) * max(1.0 - inversesqrt(x), 0.0) / 0.05665;
         float temperature = pow(flux, 0.25);
+
+        // Tobs = g Tem. The 4500 K peak is a display temperature scale, not a
+        // calibrated disk temperature. Unit-luminance chromaticity avoids counting
+        // intensity twice: only the bolometric flux below receives the g^4 factor.
+        vec3 col = blackbodyColor(4500.0 * temperature * shift);
+        float emission = 0.85 * flux * density * pow(shift, 4.0);
+        return col * emission;
+      }
+
+      // A gray emitting slab of finite optical depth, not an opaque SS disk.
+      // Emission and absorption are accumulated front to back at retarded times.
+      vec4 diskSample(vec3 hit, vec3 vel, float travelTime) {
+        float r = length(hit);
+        float u = (r - R_IN) / (R_OUT - R_IN);
+        if (u < 0.0 || u > 1.0) return vec4(0.0);
+
+        float phi = atan(hit.z, hit.x);
         float edge = smoothstep(0.0, 0.035, u) * (1.0 - smoothstep(0.65, 1.0, u));
 
         float f = 1.0 - RS / r;
@@ -339,16 +371,35 @@
         float dop = sqrt(1.0 - beta * beta) / (1.0 - dot(vhat * beta, -nv));
         float shift = dop * sqrt(f / (1.0 - RS / length(uCamPos)));
 
-        // Tobs = g Tem. The 4500 K peak is a display temperature scale, not a
-        // calibrated disk temperature. Unit-luminance chromaticity avoids counting
-        // intensity twice: only the bolometric flux below receives the g^4 factor.
-        vec3 col = blackbodyColor(4500.0 * temperature * shift);
-        float emission = 0.85 * flux * density * pow(shift, 4.0);
         // Aberration into the gas frame (its boost is parallel to the disk).
         float muComoving = clamp(dop * abs(nv.y), 0.0, 1.0);
         float opacity = edge * (1.0 - exp(-1.8 / max(muComoving, 0.001)));
-        return vec4(col * emission, opacity);
+        #ifdef CACHE_RAYS
+          // Preserve float32 intermediates and the original opacity/early exits.
+          // Continuous orbits cross r >= 3 Rs at most twice. Flag any numerical
+          // exception so the entire frame can use the original shader instead.
+          if (hitCount == 0) {
+            hitRecord0 = vec4(r, phi, travelTime, shift);
+            hitOpacity.x = opacity;
+          } else if (hitCount == 1) {
+            hitRecord1 = vec4(r, phi, travelTime, shift);
+            hitOpacity.y = opacity;
+          } else {
+            hitRecord0.x = -1.0;
+          }
+          hitCount++;
+          return vec4(0.0, 0.0, 0.0, opacity);
+        #else
+        return vec4(diskEmission(r, phi, travelTime, shift), opacity);
+        #endif
       }
+
+      #ifdef SHADE_CACHED_RAYS
+      vec4 shadeHit(vec4 record, float opacity) {
+        if (record.x == 0.0) return vec4(0.0);
+        return vec4(diskEmission(record.x, record.y, record.z, record.w), opacity);
+      }
+      #endif
 
       void main() {
         vec2 c = gl_FragCoord.xy - 0.5 * uRes;
@@ -359,6 +410,23 @@
         float s  = min(uRes.x, uRes.y);
         vec2  p  = c / s;
         vec2  pn = c / uRes * 2.0;
+
+        #ifdef SHADE_CACHED_RAYS
+          ivec2 pixel = ivec2(gl_FragCoord.xy);
+          vec4 firstHit = texelFetch(uHit0, pixel, 0);
+          vec4 backdrop = texelFetch(uBackdrop, pixel, 0);
+          vec4 disk = shadeHit(firstHit, backdrop.a);
+          vec3 col = vec3(0.0);
+          float transmission = 1.0;
+          col += transmission * disk.rgb * disk.a;
+          transmission *= 1.0 - disk.a;
+          disk = shadeHit(texelFetch(uHit1, pixel, 0), texelFetch(uOpacity1, pixel, 0).r);
+          col += transmission * disk.rgb * disk.a;
+          transmission *= 1.0 - disk.a;
+          col += transmission * backdrop.rgb;
+          col *= clamp(1.0 - 0.30 * pow(length(pn * vec2(0.86, 1.0)), 2.4), 0.0, 1.0);
+          gl_FragColor = vec4(max(col, 0.0), 1.0);
+        #else
 
         vec2 pc = p - uCenter;
 
@@ -426,15 +494,25 @@
         // Evaluate derivatives after reconvergence, including non-escaping pixels.
         vec3 skyDx = dFdx(skyDir);
         vec3 skyDy = dFdy(skyDir);
+        vec3 background = vec3(0.0);
+        if (escaped) background = sky(skyDir, skyDx, skyDy);
         // Budget exhaustion is unresolved, not physical capture: retain known
         // disk emission but add sky only after a verified outward escape.
         if (escaped) {
-          col += transmission * sky(skyDir, skyDx, skyDy);
+          col += transmission * background;
         }
 
+        #ifdef CACHE_RAYS
+          gl_FragColor = hitRecord0;
+          cachedHit1 = hitRecord1;
+          cachedBackdrop = vec4(background, hitOpacity.x);
+          cachedOpacity1 = vec4(hitOpacity.y, 0.0, 0.0, 0.0);
+        #else
         col *= clamp(1.0 - 0.30 * pow(length(pn * vec2(0.86, 1.0)), 2.4), 0.0, 1.0);
 
         gl_FragColor = vec4(max(col, 0.0), 1.0);
+        #endif
+        #endif
       }
     `;
 
@@ -448,13 +526,85 @@
       uniforms, vertexShader: vert, fragmentShader: frag,
       depthTest: false, depthWrite: false
     });
-    scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
+    const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    scene.add(screenMesh);
 
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
     const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.14, 0.15, 1.40);
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
+    // Full-screen color passes never consume depth; avoid unused GPU storage.
+    for (const target of [
+      composer.renderTarget1, composer.renderTarget2, bloom.renderTargetBright,
+      ...bloom.renderTargetsHorizontal, ...bloom.renderTargetsVertical
+    ]) target.depthBuffer = false;
+
+    // The camera, trajectories, opacity and stars are static. Cache their exact
+    // per-pixel float32 values; only disk emission needs evaluating every frame.
+    // Three RGBA32F targets + one R32F target cost 52 bytes per render pixel.
+    // Unsupported/incomplete float targets use the original shader at full quality.
+    const gl = renderer.getContext();
+    let rayCache = null;
+    let cacheDirty = true;
+    let cacheWarmupFrames = 0;
+    const traceMaterial = new THREE.ShaderMaterial({
+      uniforms, vertexShader: vert, fragmentShader: frag, defines: { CACHE_RAYS: 1 },
+      depthTest: false, depthWrite: false, blending: THREE.NoBlending
+    });
+    const cachedMaterial = new THREE.ShaderMaterial({
+      uniforms, vertexShader: vert, fragmentShader: frag, defines: { SHADE_CACHED_RAYS: 1 },
+      depthTest: false, depthWrite: false, blending: THREE.NoBlending
+    });
+    if (renderer.extensions.has('EXT_color_buffer_float')) {
+      rayCache = new THREE.WebGLRenderTarget(1, 1, {
+        count: 4, type: THREE.FloatType, minFilter: THREE.NearestFilter,
+        magFilter: THREE.NearestFilter, depthBuffer: false, stencilBuffer: false
+      });
+      rayCache.textures[3].format = THREE.RedFormat;
+      rayCache.textures[3].internalFormat = 'R32F';
+      uniforms.uHit0.value = rayCache.textures[0];
+      uniforms.uHit1.value = rayCache.textures[1];
+      uniforms.uBackdrop.value = rayCache.textures[2];
+      uniforms.uOpacity1.value = rayCache.textures[3];
+    }
+
+    function renderScene() {
+      if (rayCache && cacheDirty) {
+        // Frame intervals include the previous draw. Exclude this one-off build
+        // and its following interval from steady-state quality measurements.
+        cacheWarmupFrames = 2;
+        const previousTarget = renderer.getRenderTarget();
+        renderer.setRenderTarget(rayCache);
+        let usableCache = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+        if (usableCache) {
+          screenMesh.material = traceMaterial;
+          renderer.render(scene, camera);
+          // One readback per rebuild, never per animation frame. RGBA/FLOAT is
+          // portable for this RGBA32F attachment; RED/FLOAT is not guaranteed.
+          try {
+            const hits = new Float32Array(rayCache.width * rayCache.height * 4);
+            renderer.readRenderTargetPixels(rayCache, 0, 0, rayCache.width, rayCache.height, hits);
+            usableCache = gl.getError() === gl.NO_ERROR;
+            for (let i = 0; i < hits.length; i += 4) {
+              if (hits[i] < 0) { usableCache = false; break; }
+            }
+          } catch {
+            usableCache = false;
+          }
+        }
+        renderer.setRenderTarget(previousTarget);
+        if (usableCache) {
+          screenMesh.material = cachedMaterial;
+          cacheDirty = false;
+        } else {
+          rayCache.dispose();
+          rayCache = null;
+          screenMesh.material = material;
+        }
+      }
+      composer.render();
+    }
 
     let quality = 1;   // keep a lower resolution only when it improves frame time
     let lastW = 0, lastH = 0, lastDpr = 0;
@@ -512,26 +662,34 @@
       const shift = landscape * 0.04 * aspect;
       uniforms.uCenter.value.set(shift, 0);
       uniforms.uFocal.value = THREE.MathUtils.lerp(0.88, FOCAL, landscape);
+      if (rayCache) {
+        rayCache.setSize(renderW, renderH);
+        cacheDirty = true;
+      }
       requestFrame();
     }
 
     function frame(now) {
       frameId = 0;
       if (contextLost || document.hidden) return;
-      // Clamped so a backgrounded tab does not resume with a jump in the disk.
-      const dt = Math.min((now - last) / 1000, 0.1);
+      const frameTime = (now - last) / 1000;
+      // Clamp animation time only; performance sampling needs the full duration.
+      const dt = Math.min(frameTime, 0.1);
       last = now;
       if (!reducedMotion.matches) elapsed += dt;
       uniforms.uTime.value = elapsed;
-      composer.render();
+      renderScene();
       canvas.classList.add('ready');
       if (reducedMotion.matches) return;
 
       // Trial a lower resolution below ~45 fps. A 30 Hz display or browser frame
       // cap is not GPU overload: if the trial does not improve timing by 10%,
       // restore its previous quality and stop probing until the viewport changes.
-      if (!qualityLocked) {
-        sampleAcc += dt;
+      if (cacheWarmupFrames > 0) {
+        cacheWarmupFrames--;
+        sampled = 0; sampleAcc = 0;
+      } else if (!qualityLocked) {
+        sampleAcc += frameTime;
         if (++sampled === 45) {
           const average = sampleAcc / sampled;
           sampled = 0; sampleAcc = 0;
@@ -563,6 +721,10 @@
       // this until reset/resize tries to delete handles from the previous context.
       composer.dispose();
       for (const pass of composer.passes) pass.dispose();
+      if (rayCache) rayCache.dispose();
+      traceMaterial.dispose();
+      cachedMaterial.dispose();
+      cacheDirty = true;
       canvas.classList.remove('ready');
     });
     canvas.addEventListener('webglcontextrestored', () => {
