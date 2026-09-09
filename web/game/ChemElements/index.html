@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="化学元素探索器 - 交互式3D原子结构可视化与元素周期表">
+  <title>化学元素探索器 | Chemistry Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header id="app-header">
+    <h1 class="app-title">
+      <span class="title-icon">⚛</span>
+      <span>化学元素探索器</span>
+      <span class="title-sub">Chemistry Explorer</span>
+    </h1>
+  </header>
+
+  <main id="app-main">
+    <!-- Left: Periodic Table -->
+    <section id="periodic-section">
+      <div id="periodic-table"></div>
+      <div id="category-legend"></div>
+    </section>
+
+    <!-- Right: 3D Viewer + Properties -->
+    <aside id="detail-section" class="hidden">
+      <div id="viewer-container">
+        <canvas id="atom-canvas"></canvas>
+        <div id="viewer-label"></div>
+      </div>
+      <div id="properties-panel">
+        <div id="prop-header"></div>
+        <div id="prop-basic" class="prop-group"></div>
+        <div id="prop-physical" class="prop-group"></div>
+        <div id="prop-chemical" class="prop-group"></div>
+        <div id="prop-history" class="prop-group"></div>
+      </div>
+    </aside>
+
+    <!-- Placeholder when no element selected -->
+    <aside id="placeholder-section">
+      <div class="placeholder-content">
+        <span class="placeholder-icon">🔬</span>
+        <p>点击周期表中的元素<br>查看3D原子结构和详细属性</p>
+      </div>
+    </aside>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="js/elements-data.js"></script>
+  <script src="js/periodic-table.js"></script>
+  <script src="js/atom-viewer.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

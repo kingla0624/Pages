@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="星轨引力 - 放置引力井引导星光穿越星空的物理解谜游戏">
+  <title>星轨引力 | Orbit Weaver</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Main Menu -->
+  <div id="menu-screen" class="screen active">
+    <div class="menu-stars"></div>
+    <div class="menu-content">
+      <h1 class="game-title">
+        <span class="title-star">✦</span>
+        <span class="title-text">星轨引力</span>
+        <span class="title-sub">ORBIT WEAVER</span>
+      </h1>
+      <div class="menu-buttons">
+        <button id="btn-start" class="btn btn-primary">
+          <span class="btn-icon">▶</span> 开始游戏
+        </button>
+        <button id="btn-levels" class="btn btn-secondary">
+          <span class="btn-icon">◈</span> 选择关卡
+        </button>
+      </div>
+      <p class="menu-hint">放置引力井，编织星光之路</p>
+    </div>
+  </div>
+
+  <!-- Level Select -->
+  <div id="level-screen" class="screen">
+    <div class="screen-header">
+      <button id="btn-back-menu" class="btn btn-icon-only">← 返回</button>
+      <h2>选择关卡</h2>
+    </div>
+    <div id="level-grid" class="level-grid"></div>
+  </div>
+
+  <!-- Game Screen -->
+  <div id="game-screen" class="screen">
+    <canvas id="game-canvas"></canvas>
+    <div id="game-hud">
+      <div class="hud-left">
+        <button id="btn-pause" class="btn btn-hud">⏸</button>
+        <span id="hud-level" class="hud-label">关卡 1</span>
+      </div>
+      <div class="hud-center">
+        <div id="hud-wells" class="hud-wells">
+          <!-- Gravity well indicators rendered by JS -->
+        </div>
+      </div>
+      <div class="hud-right">
+        <button id="btn-launch" class="btn btn-launch">
+          <span class="launch-icon">✦</span> 发射
+        </button>
+        <button id="btn-reset" class="btn btn-hud">↻ 重置</button>
+      </div>
+    </div>
+
+    <!-- Strength slider (visible when placing a well) -->
+    <div id="well-strength-panel" class="strength-panel hidden">
+      <label>引力强度</label>
+      <input type="range" id="well-strength" min="1" max="10" value="5">
+      <span id="strength-value">5</span>
+    </div>
+  </div>
+
+  <!-- Level Complete Overlay -->
+  <div id="complete-overlay" class="overlay hidden">
+    <div class="overlay-card">
+      <h2 class="complete-title">✨ 过关！</h2>
+      <div id="stars-display" class="stars-display">
+        <span class="star">☆</span><span class="star">☆</span><span class="star">☆</span>
+      </div>
+      <div id="score-details" class="score-details"></div>
+      <div class="overlay-buttons">
+        <button id="btn-next" class="btn btn-primary">下一关 →</button>
+        <button id="btn-retry" class="btn btn-secondary">重试</button>
+        <button id="btn-to-levels" class="btn btn-secondary">关卡列表</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fail Overlay -->
+  <div id="fail-overlay" class="overlay hidden">
+    <div class="overlay-card fail-card">
+      <h2 class="fail-title">💀 星光消逝...</h2>
+      <p id="fail-reason" class="fail-reason"></p>
+      <div class="overlay-buttons">
+        <button id="btn-fail-retry" class="btn btn-primary">再试一次</button>
+        <button id="btn-fail-levels" class="btn btn-secondary">关卡列表</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pause Overlay -->
+  <div id="pause-overlay" class="overlay hidden">
+    <div class="overlay-card">
+      <h2>⏸ 暂停</h2>
+      <div class="overlay-buttons">
+        <button id="btn-resume" class="btn btn-primary">继续</button>
+        <button id="btn-pause-restart" class="btn btn-secondary">重新开始</button>
+        <button id="btn-pause-menu" class="btn btn-secondary">返回主菜单</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tutorial Tooltip -->
+  <div id="tutorial-tooltip" class="tutorial-tooltip hidden">
+    <p id="tutorial-text"></p>
+    <button id="btn-tutorial-ok" class="btn btn-small">知道了</button>
+  </div>
+
+  <script src="js/audio.js"></script>
+  <script src="js/physics.js"></script>
+  <script src="js/level.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
