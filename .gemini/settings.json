@@ -1,0 +1,41 @@
+{
+  "$schema": "https://gemini.google.com/schemas/agent-settings.json",
+  "model": "gemini-3.8-pro",
+  "settings": {
+    "autoExecutionPolicy": "CASCADE_COMMANDS_AUTO_EXECUTION_EAGER",
+    "artifactReviewMode": "ARTIFACT_REVIEW_MODE_AGENT_DECIDES",
+    "fileAccessPolicy": "WORKSPACE_ONLY",
+    "internetAccessPolicy": "ASK_ON_MUTATION",
+    "sandbox": {
+      "enabled": true
+    }
+  },
+  "permissionGrants": {
+    "allow": [
+      "command(git status)",
+      "command(git diff:*)",
+      "command(git log:*)",
+      "command(npm run lint)",
+      "command(npm run typecheck)",
+      "command(npm test:*)",
+      "command(pytest:*)",
+      "command(cargo check)"
+    ],
+    "deny": [
+      "command(sudo *)",
+      "command(rm -rf *)",
+      "command(git reset --hard *)",
+      "read_file(.env*)",
+      "write_file(.env*)",
+      "read_file(secrets/**)",
+      "read_file(~/.ssh/**)",
+      "read_file(**/*.pem)",
+      "read_file(~/.claude/.credentials.json)"
+    ]
+  },
+  "plugins": {
+    "chrome-devtools-plugin": {
+      "enabled": true
+    }
+  }
+}

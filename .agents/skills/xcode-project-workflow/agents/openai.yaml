@@ -1,0 +1,4 @@
+interface:
+  display_name: "Xcode Project Workflow"
+  short_description: "Build, run, debug, and verify Xcode apps"
+  default_prompt: "Use $xcode-project-workflow to develop and verify this Xcode project with the best available Xcode tooling."
