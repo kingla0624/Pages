@@ -1,0 +1,4 @@
+interface:
+  display_name: "Apple iOS Native Design"
+  short_description: "Design and review native iOS interfaces with Apple guidance"
+  default_prompt: "使用 $apple-ios-native-design，结合当前项目和目标系统版本，设计或审查原生 iOS 界面与交互，并给出组件选择、实现映射和验证证据。"
