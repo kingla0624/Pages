@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Aqura - 3D 网页沉浸水族箱</title>
+  <link rel="stylesheet" href="./css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐠</text></svg>">
+</head>
+<body>
+  <!-- 3D WebGL Canvas Layer -->
+  <div id="canvasContainer"></div>
+
+  <!-- HUD Overlay Layer -->
+  <div id="hudOverlay">
+    <!-- Top Status Bar -->
+    <header class="top-bar">
+      <div class="brand-section">
+        <h1 class="brand-title">
+          <svg class="brand-svg" viewBox="0 0 24 24" fill="#38bdf8"><path d="M12 5c-3.87 0-7 3.13-7 7s3.13 7 7 7c2.38 0 4.5-1.19 5.78-3.01L22 17l-1.5-5L22 7l-4.22 1.01C16.5 6.19 14.38 5 12 5z"/></svg>
+          Aqura
+        </h1>
+        <span class="brand-tag">3D 水族物语</span>
+      </div>
+
+      <div class="stats-row">
+        <!-- Coins -->
+        <div class="stat-pill glass-panel">
+          <svg class="stat-svg coin-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="#f59e0b"/><circle cx="12" cy="12" r="7.2" fill="#fbbf24" stroke="#d97706" stroke-width="1.2"/><text x="12" y="15.5" font-size="10" font-weight="900" fill="#78350f" text-anchor="middle">¢</text></svg>
+          <span id="coinsBadge">80</span>
+        </div>
+
+        <!-- Cleanliness Bar -->
+        <div class="stat-pill glass-panel">
+          <svg class="stat-svg water-svg" viewBox="0 0 24 24" fill="#38bdf8"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+          <div class="cleanliness-bar-wrap">
+            <span style="font-size:0.75rem; color:var(--text-muted);">水质</span>
+            <div class="progress-track">
+              <div id="cleanlinessFill" class="progress-fill"></div>
+            </div>
+            <span id="cleanlinessVal" style="font-size:0.8rem;">95%</span>
+          </div>
+        </div>
+
+        <!-- Fish Count -->
+        <div class="stat-pill glass-panel">
+          <svg class="stat-svg fish-svg" viewBox="0 0 24 24" fill="#60a5fa"><path d="M12 5c-3.87 0-7 3.13-7 7s3.13 7 7 7c2.38 0 4.5-1.19 5.78-3.01L22 17l-1.5-5L22 7l-4.22 1.01C16.5 6.19 14.38 5 12 5z"/></svg>
+          <span id="fishCountBadge">3</span>
+          <span style="font-size:0.75rem; color:var(--text-muted);">尾</span>
+        </div>
+      </div>
+
+      <!-- Action Toggles -->
+      <div class="header-actions">
+        <button id="photoBtn" class="icon-btn" title="进入摄影模式">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="#e2e8f0"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+          <span>拍照</span>
+        </button>
+        <button id="soundBtn" class="icon-btn" title="声音开关">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="#38bdf8"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+          <span>声音</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Floating Toast Notification Center -->
+    <div id="toastContainer"></div>
+
+    <!-- Bottom Action Dock -->
+    <nav class="bottom-bar">
+      <div class="action-dock glass-panel">
+        <button class="tool-btn active" data-tool="feed" title="点击水面投放鱼食">
+          <svg class="tool-svg" viewBox="0 0 24 24" fill="#fbbf24"><path d="M19 5v14H5V5h14m0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 5c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+          <span>投喂食物</span>
+        </button>
+        <button class="tool-btn" data-tool="tap" title="轻敲鱼缸玻璃互动">
+          <svg class="tool-svg" viewBox="0 0 24 24" fill="#38bdf8"><path d="M9 11.24V7.5C9 6.12 10.12 5 11.5 5S14 6.12 14 7.5v3.74c1.21-.81 2-2.18 2-3.74C16 5.01 13.99 3 11.5 3S7 5.01 7 7.5c0 1.56.79 2.93 2 3.74zm9.84 4.63l-4.54-2.26c-.17-.07-.35-.11-.54-.11H13v-6c0-.83-.67-1.5-1.5-1.5S10 6.67 10 7.5v10.74l-3.43-.72c-.08-.01-.15-.02-.24-.02-.31 0-.59.13-.79.33l-.79.8 4.94 4.94c.27.27.65.43 1.06.43h6.79c.75 0 1.33-.55 1.44-1.28l.75-5.27c.01-.07.02-.14.02-.2 0-.62-.38-1.16-.92-1.38z"/></svg>
+          <span>轻敲玻璃</span>
+        </button>
+        <button class="tool-btn" data-tool="clean" title="拖动擦拭缸壁清洁水藻">
+          <svg class="tool-svg" viewBox="0 0 24 24" fill="#4ade80"><path d="M19.36 10.04l-2.4-2.4-1.42 1.41 2.4 2.4-1.41 1.42-2.4-2.4-1.42 1.41 2.4 2.4-2.12 2.12c-.78.78-2.05.78-2.83 0l-4.24-4.24c-.78-.78-.78-2.05 0-2.83l7.07-7.07c.78-.78 2.05-.78 2.83 0l5.66 5.66c.78.78.78 2.05 0 2.83l-2.12 2.12-1.42-1.41 2.4-2.4-1.41-1.42-2.4 2.4-1.42-1.41 2.4-2.4-1.41-1.42zM3 21h18v-2H3v2z"/></svg>
+          <span>擦玻璃</span>
+        </button>
+        <button class="tool-btn" data-tool="inspect" title="点击小鱼观察状态与跟随">
+          <svg class="tool-svg" viewBox="0 0 24 24" fill="#c084fc"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <span>观察跟随</span>
+        </button>
+        <button id="shopBtn" class="tool-btn shop-trigger-btn" title="购买新鱼种与水族造景">
+          <svg class="tool-svg" viewBox="0 0 24 24" fill="#fff"><path d="M17.21 9l-4.38-6.56a.993.993 0 0 0-.83-.42c-.32 0-.64.14-.83.43L6.79 9H2c-.55 0-1 .45-1 1 0 .09.01.18.04.27l2.54 9.27c.23.84 1 1.46 1.92 1.46h13c.92 0 1.69-.62 1.93-1.46l2.54-9.27L23 10c0-.55-.45-1-1-1h-4.79zM9 9l3-4.4L15 9H9zm3 8c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+          <span>水族商店</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Fish Inspection Card -->
+  <aside id="fishCard" class="fish-card glass-panel is-hidden interactive-ui">
+    <div class="card-header">
+      <div class="card-title">
+        <h3 id="fishName">小鱼名字</h3>
+        <span id="fishSpecies">小丑鱼</span>
+      </div>
+      <button id="closeFishCardBtn" class="close-btn" title="关闭">✕</button>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-size:0.8rem; color:var(--text-muted);">稀有度</span>
+      <span id="fishRarity" class="rarity-badge 常见">常见</span>
+    </div>
+
+    <div class="metric-bar">
+      <div class="metric-label">
+        <span>饱腹度</span>
+      </div>
+      <div class="metric-track">
+        <div id="fishHunger" class="metric-fill hunger" style="width: 80%;"></div>
+      </div>
+    </div>
+
+    <div class="metric-bar">
+      <div class="metric-label">
+        <span>心情与活力</span>
+      </div>
+      <div class="metric-track">
+        <div id="fishHappiness" class="metric-fill happiness" style="width: 90%;"></div>
+      </div>
+    </div>
+
+    <p id="fishDesc" class="card-desc">鱼类生态介绍</p>
+
+    <button id="feedInspectBtn" class="feed-single-btn">
+      <svg style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;" viewBox="0 0 24 24" fill="#f43f5e"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+      特别喂食加餐
+    </button>
+  </aside>
+
+  <!-- Shop Modal Drawer -->
+  <div id="shopModal" class="modal-overlay is-hidden interactive-ui">
+    <div class="shop-window glass-panel">
+      <div class="modal-header">
+        <h3 style="display:flex;align-items:center;gap:8px;">
+          <svg style="width:20px;height:20px;" viewBox="0 0 24 24" fill="#38bdf8"><path d="M17.21 9l-4.38-6.56a.993.993 0 0 0-.83-.42c-.32 0-.64.14-.83.43L6.79 9H2c-.55 0-1 .45-1 1 0 .09.01.18.04.27l2.54 9.27c.23.84 1 1.46 1.92 1.46h13c.92 0 1.69-.62 1.93-1.46l2.54-9.27L23 10c0-.55-.45-1-1-1h-4.79zM9 9l3-4.4L15 9H9zm3 8c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+          水族造景与物种商店
+        </h3>
+        <button id="closeShopBtn" class="close-btn">✕</button>
+      </div>
+
+      <div class="shop-tabs">
+        <button class="shop-tab active" data-tab="fish">
+          <svg style="width:15px;height:15px;vertical-align:-2px;margin-right:4px;" viewBox="0 0 24 24" fill="#38bdf8"><path d="M12 5c-3.87 0-7 3.13-7 7s3.13 7 7 7c2.38 0 4.5-1.19 5.78-3.01L22 17l-1.5-5L22 7l-4.22 1.01C16.5 6.19 14.38 5 12 5z"/></svg>
+          鱼类物种
+        </button>
+        <button class="shop-tab" data-tab="decorations">
+          <svg style="width:15px;height:15px;vertical-align:-2px;margin-right:4px;" viewBox="0 0 24 24" fill="#34d399"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+          造景与设备
+        </button>
+        <button class="shop-tab" data-tab="lighting">
+          <svg style="width:15px;height:15px;vertical-align:-2px;margin-right:4px;" viewBox="0 0 24 24" fill="#fbbf24"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>
+          灯效氛围
+        </button>
+      </div>
+
+      <div id="shopContent" class="shop-content">
+        <!-- Rendered dynamically by js/ui.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Photo Mode Overlay Controls -->
+  <div id="photoExitBtn" class="photo-controls is-hidden">
+    <button class="photo-action-btn" onclick="window.aquraGame.ui.captureSnapshot()">
+      <svg style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;" viewBox="0 0 24 24" fill="#fff"><circle cx="12" cy="12" r="3.2"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+      保存截图
+    </button>
+    <button class="photo-action-btn" onclick="window.aquraGame.ui.exitPhotoMode()">✕ 退出摄影</button>
+  </div>
+
+  <!-- JavaScript Entry Point -->
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
