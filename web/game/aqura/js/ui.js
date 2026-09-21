@@ -181,10 +181,10 @@ export class UIManager {
         this.foodManager.spawnFood(hit.x, hit.z);
       }
     } else if (tool === "tap") {
-      // Tap on glass
+      // Wave disturbance pulse
       const hit = this.scene.getRaycastPoint(e.clientX, e.clientY, 0);
       const tapPos = hit || new THREE.Vector3(0, 0, this.scene.bounds.maxZ);
-      this.fishManager.tapGlass(tapPos);
+      this.fishManager.sendWavePulse(tapPos);
       this.showTapRipple(e.clientX, e.clientY);
     } else if (tool === "clean") {
       this.handleWipeCleaning(e);
@@ -281,7 +281,7 @@ export class UIManager {
           <div class="shop-card-buy">
             <span class="price-tag"><svg class="coin-svg" viewBox="0 0 24 24" style="width:16px;height:16px;"><circle cx="12" cy="12" r="9.5" fill="#f59e0b"/><circle cx="12" cy="12" r="7.2" fill="#fbbf24" stroke="#d97706" stroke-width="1.2"/><text x="12" y="15.5" font-size="10" font-weight="900" fill="#78350f" text-anchor="middle">¢</text></svg>${item.price}</span>
             <button class="buy-btn ${canAfford ? '' : 'disabled'}" ${canAfford ? '' : 'disabled'}>
-              购买并放入缸中
+              引入并游入海域
             </button>
           </div>
         `;
@@ -291,7 +291,7 @@ export class UIManager {
           const bought = this.state.buyFish(key);
           if (bought) {
             this.audio.playPurchase();
-            this.showToast(`成功购买了新伙伴: ${bought.name}!`);
+            this.showToast(`成功引入了新伙伴: ${bought.name}!`);
             this.renderShopTab("fish");
           }
         });
@@ -322,7 +322,7 @@ export class UIManager {
           const bought = this.state.buyDecoration(key);
           if (bought) {
             this.audio.playPurchase();
-            this.showToast(`已购置 ${item.name} 并布置到鱼缸底部!`);
+            this.showToast(`已购置 ${item.name} 并点缀于海底海床!`);
             this.renderShopTab("decorations");
           }
         });

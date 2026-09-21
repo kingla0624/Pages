@@ -3,7 +3,7 @@
  * Manages player progression, fish roster, decoration catalog, cleanliness, and settings.
  */
 
-const STORAGE_KEY = "aqura_aquarium_savedata_v1";
+const STORAGE_KEY = "aqura_ocean_savedata_v2";
 
 export const FISH_CATALOG = {
   clownfish: {
@@ -13,7 +13,7 @@ export const FISH_CATALOG = {
     speed: 1.4,
     size: 0.9,
     rarity: "常见",
-    colors: { body: 0xff6600, stripe: 0xffffff, fin: 0xff4400 }
+    colors: { body: 0xff6600, stripe: 0xffffff, fin: 0xff7043 }
   },
   blue_tang: {
     name: "蓝唐王鱼 (Blue Tang)",
@@ -64,31 +64,43 @@ export const FISH_CATALOG = {
 
 export const DECORATION_CATALOG = {
   seaweed_cluster: {
-    name: "摇曳海藻丛",
+    name: "摇曳巨藻林",
     price: 15,
-    desc: "随水流柔美波动的翠绿水草丛，提供鱼儿捉迷藏乐园。",
+    desc: "随深海洋流柔美波动的翠绿海藻丛，提供鱼儿捉迷藏乐园。",
     type: "plant"
   },
   coral_reef: {
-    name: "七彩珊瑚礁",
+    name: "多层珊瑚丘",
     price: 40,
-    desc: "绚丽夺目的热带海葵与分支鹿角珊瑚群。",
+    desc: "绚丽夺目的热带海葵与分支鹿角珊瑚群生礁体。",
     type: "coral"
   },
+  amphora: {
+    name: "古沉船双耳陶罐",
+    price: 45,
+    desc: "半埋于海沙中的古老陶罐遗迹，附着着斑驳的海生生物。",
+    type: "relic"
+  },
+  seastar: {
+    name: "蓝指海星石",
+    price: 30,
+    desc: "栖息在海底礁石上的深蓝指海星，点缀蔚蓝海底。",
+    type: "creature"
+  },
   air_stone: {
-    name: "珍珠气泡发生石",
+    name: "深海冷泉喷口",
     price: 50,
-    desc: "安置在沙底，源源不断喷涌欢快向上的小气泡流。",
+    desc: "安置在海床基岩，源源不断喷涌欢快向上的微细气泡流。",
     type: "bubbler"
   },
   treasure_chest: {
     name: "沉船藏宝箱",
     price: 90,
-    desc: "神秘海盗宝箱，定时缓缓开盖吐出金币泡泡。",
+    desc: "神秘海盗遗落宝箱，定时缓缓开盖吐出金币泡泡。",
     type: "chest"
   },
   roman_column: {
-    name: "亚特兰蒂斯古石柱",
+    name: "亚特兰蒂斯断柱",
     price: 75,
     desc: "沉睡水底的古老断柱遗迹，长满苔藓与贝壳。",
     type: "ruin"
@@ -176,11 +188,16 @@ export class GameState {
         playSeconds: 0
       },
       decorations: [
-        { id: "dec_1", type: "seaweed_cluster", x: -3.8, z: -1.2 },
-        { id: "dec_2", type: "seaweed_cluster", x: 3.6, z: -1.5 },
-        { id: "dec_3", type: "coral_reef", x: -2.0, z: -1.8 },
-        { id: "dec_4", type: "air_stone", x: 2.8, z: 0.8 },
-        { id: "dec_5", type: "treasure_chest", x: 0.0, z: -1.6 }
+        { id: "dec_1", type: "coral_reef", x: -2.8, z: -1.6, scale: 1.05 },
+        { id: "dec_2", type: "seaweed_cluster", x: 4.2, z: -1.0 },
+        { id: "dec_3", type: "amphora", x: 1.2, z: -1.8, rotY: 0.6 },
+        { id: "dec_4", type: "seastar", x: -1.4, z: -0.8 },
+        { id: "dec_5", type: "coral_reef", x: 3.8, z: -4.8, scale: 1.25, rotY: 1.8 },
+        { id: "dec_6", type: "seaweed_cluster", x: -6.5, z: -4.2 },
+        { id: "dec_7", type: "air_stone", x: -1.5, z: -6.5 },
+        { id: "dec_8", type: "coral_reef", x: -4.8, z: -11.5, scale: 1.6, rotY: 2.5 },
+        { id: "dec_9", type: "roman_column", x: 6.0, z: -10.0, scale: 1.3 },
+        { id: "dec_10", type: "treasure_chest", x: 0.5, z: -8.5, rotY: -0.4 }
       ],
       fishes: [
         {

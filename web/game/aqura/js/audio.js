@@ -168,63 +168,76 @@ export class AudioManager {
     osc.stop(now + 0.16);
   }
 
-  playTap() {
+  playWaterPulse() {
     this.ensureContext();
     if (!this.ctx || this.isMuted) return;
     const now = this.ctx.currentTime;
 
-    // Low solid glass thud (finger tapping thick acrylic)
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
+    // 1. Deep sub-bass hydro-acoustic pressure wave (55Hz sub drop)
+    const subOsc = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    subOsc.type = "sine";
+    subOsc.frequency.setValueAtTime(80, now);
+    subOsc.frequency.exponentialRampToValueAtTime(36, now + 0.32);
 
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(140, now);
-    osc.frequency.exponentialRampToValueAtTime(45, now + 0.18);
+    subGain.gain.setValueAtTime(0.75, now);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
 
-    gain.gain.setValueAtTime(0.6, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    subOsc.connect(subGain);
+    subGain.connect(this.masterGain);
+    subOsc.start(now);
+    subOsc.stop(now + 0.33);
 
-    osc.connect(gain);
-    gain.connect(this.masterGain);
+    // 2. Underwater acoustic fluid resonance
+    const resOsc = this.ctx.createOscillator();
+    const resGain = this.ctx.createGain();
+    resOsc.type = "sine";
+    resOsc.frequency.setValueAtTime(220, now);
+    resOsc.frequency.exponentialRampToValueAtTime(95, now + 0.22);
 
-    osc.start(now);
-    osc.stop(now + 0.2);
+    resGain.gain.setValueAtTime(0.3, now);
+    resGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
 
-    // High subtle glass transient click
-    const clickOsc = this.ctx.createOscillator();
-    const clickGain = this.ctx.createGain();
-    clickOsc.type = "sine";
-    clickOsc.frequency.setValueAtTime(2400, now);
-    clickGain.gain.setValueAtTime(0.2, now);
-    clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
-
-    clickOsc.connect(clickGain);
-    clickGain.connect(this.masterGain);
-    clickOsc.start(now);
-    clickOsc.stop(now + 0.04);
+    resOsc.connect(resGain);
+    resGain.connect(this.masterGain);
+    resOsc.start(now);
+    resOsc.stop(now + 0.23);
   }
 
-  playClean() {
+  playTap() {
+    this.playWaterPulse();
+  }
+
+  playOceanSurge() {
     this.ensureContext();
     if (!this.ctx || this.isMuted) return;
     const now = this.ctx.currentTime;
 
-    // Soft squeak / wiping sound
+    // Rushing ocean current surge / water purification
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
 
     osc.type = "sine";
-    osc.frequency.setValueAtTime(320, now);
-    osc.frequency.linearRampToValueAtTime(480, now + 0.06);
+    osc.frequency.setValueAtTime(160, now);
+    osc.frequency.exponentialRampToValueAtTime(320, now + 0.08);
+    osc.frequency.exponentialRampToValueAtTime(90, now + 0.25);
 
-    gain.gain.setValueAtTime(0.12, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    gain.gain.setValueAtTime(0.01, now);
+    gain.gain.linearRampToValueAtTime(0.28, now + 0.06);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
 
     osc.connect(gain);
     gain.connect(this.masterGain);
 
     osc.start(now);
-    osc.stop(now + 0.09);
+    osc.stop(now + 0.29);
+
+    // Complementary bubble splash
+    setTimeout(() => this.playBubble(0.18), 40);
+  }
+
+  playClean() {
+    this.playOceanSurge();
   }
 
   playPurchase() {
