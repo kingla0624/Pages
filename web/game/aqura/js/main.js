@@ -39,8 +39,10 @@ class AquraGame {
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) {
         this.isTabActive = false;
+        this.audio.suspend();
       } else {
         this.isTabActive = true;
+        this.audio.resume();
         this.lastTime = performance.now(); // Avoid giant delta spike upon re-focus
       }
     });
@@ -98,8 +100,12 @@ class AquraGame {
       let delta = (now - this.lastTime) / 1000;
       this.lastTime = now;
 
-      // Cap delta to prevent physics glitches if browser stutters
-      if (delta > 0.1) delta = 0.1;
+      // Cap delta to prevent physics glitches if browser stutters or clock skews
+      if (delta <= 0 || isNaN(delta)) {
+        delta = 0.016;
+      } else if (delta > 0.1) {
+        delta = 0.1;
+      }
 
       this.totalTime += delta;
 

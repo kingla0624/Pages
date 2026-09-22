@@ -167,12 +167,12 @@
   </div>
 
   <!-- Photo Mode Overlay Controls -->
-  <div id="photoExitBtn" class="photo-controls is-hidden">
-    <button class="photo-action-btn" onclick="window.aquraGame.ui.captureSnapshot()">
+  <div id="photoControls" class="photo-controls is-hidden">
+    <button id="captureSnapshotBtn" class="photo-action-btn">
       <svg style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;" viewBox="0 0 24 24" fill="#fff"><circle cx="12" cy="12" r="3.2"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
       保存截图
     </button>
-    <button class="photo-action-btn" onclick="window.aquraGame.ui.exitPhotoMode()">✕ 退出摄影</button>
+    <button id="photoExitBtn" class="photo-action-btn">✕ 退出摄影</button>
   </div>
 
   <!-- JavaScript Entry Point -->

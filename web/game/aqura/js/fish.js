@@ -183,6 +183,7 @@ export class FishManager {
       if (f.isAmbient) continue; // Always preserve ambient ocean wildlife
       if (!stateIds.has(f.id)) {
         this.rootGroup.remove(f.group);
+        this.disposeFishMesh(f.group);
         this.fishList.splice(i, 1);
       }
     }
@@ -193,6 +194,27 @@ export class FishManager {
         this.spawnFish(sf);
       }
     }
+  }
+
+  disposeFishMesh(group) {
+    group.traverse(child => {
+      if (child.isMesh) {
+        child.geometry?.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(m => {
+              m.map?.dispose();
+              m.bumpMap?.dispose();
+              m.dispose();
+            });
+          } else {
+            child.material.map?.dispose();
+            child.material.bumpMap?.dispose();
+            child.material.dispose();
+          }
+        }
+      }
+    });
   }
 
   spawnFish(fishData) {

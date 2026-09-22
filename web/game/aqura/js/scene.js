@@ -218,6 +218,8 @@ export class AquariumScene {
     this.causticsTexture.wrapT = THREE.RepeatWrapping;
     this.causticsTexture.repeat.set(8, 6);
 
+    this.causticsImageData = this.causticsCtx.createImageData(256, 256);
+
     // Apply directly to sand material with natural underwater irradiance
     this.sandMaterial.emissiveMap = this.causticsTexture;
     this.sandMaterial.emissive = new THREE.Color(0x0284c7);
@@ -228,7 +230,7 @@ export class AquariumScene {
     const ctx = this.causticsCtx;
     const w = 256;
     const h = 256;
-    const imgData = ctx.createImageData(w, h);
+    const imgData = this.causticsImageData;
     const data = imgData.data;
 
     const t = time * 1.5;

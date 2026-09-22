@@ -1,3 +1,4 @@
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js";
 import { FISH_CATALOG, DECORATION_CATALOG, LIGHTING_THEMES } from "./state.js";
 
 /**
@@ -45,6 +46,8 @@ export class UIManager {
       themeSelect: document.querySelector("#themeSelect"),
       canvasContainer: document.querySelector("#canvasContainer"),
       hud: document.querySelector("#hudOverlay"),
+      photoControls: document.querySelector("#photoControls"),
+      captureSnapshotBtn: document.querySelector("#captureSnapshotBtn"),
       photoExitBtn: document.querySelector("#photoExitBtn"),
       toastContainer: document.querySelector("#toastContainer")
     };
@@ -124,9 +127,19 @@ export class UIManager {
       this.enterPhotoMode();
     });
 
-    this.dom.photoExitBtn.addEventListener("click", () => {
-      this.exitPhotoMode();
-    });
+    if (this.dom.captureSnapshotBtn) {
+      this.dom.captureSnapshotBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.captureSnapshot();
+      });
+    }
+
+    if (this.dom.photoExitBtn) {
+      this.dom.photoExitBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.exitPhotoMode();
+      });
+    }
 
     // 6. 3D Canvas Interactivity (Feed, Tap, Clean, Inspect)
     const canvasEl = this.dom.canvasContainer;
@@ -387,13 +400,13 @@ export class UIManager {
 
   enterPhotoMode() {
     this.dom.hud.classList.add("photo-mode");
-    this.dom.photoExitBtn.classList.remove("is-hidden");
+    if (this.dom.photoControls) this.dom.photoControls.classList.remove("is-hidden");
     this.showToast("进入摄影模式：点击拍摄键可保存高清截屏");
   }
 
   exitPhotoMode() {
     this.dom.hud.classList.remove("photo-mode");
-    this.dom.photoExitBtn.classList.add("is-hidden");
+    if (this.dom.photoControls) this.dom.photoControls.classList.add("is-hidden");
   }
 
   captureSnapshot() {

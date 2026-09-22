@@ -28,8 +28,11 @@ const Game = (() => {
       onResume: resumeGame,
       onNextLevel: nextLevel,
       onBackToMenu: stopGameLoop,
+      onStrengthChange: handleStrengthChange,
       onTutorialDismiss: () => {}
     });
+
+    canvas.style.touchAction = 'none';
 
     // Canvas click to place gravity wells
     canvas.addEventListener('click', handleCanvasClick);
@@ -134,10 +137,30 @@ const Game = (() => {
     UI.setStrengthValue(lastWell.strength);
   }
 
+  function handleStrengthChange(val) {
+    if (phase !== 'placing') return;
+    if (wells.length === 0) return;
+    const lastWell = wells[wells.length - 1];
+    lastWell.strength = val;
+  }
+
   function handleResize() {
+    const oldW = Renderer.width;
+    const oldH = Renderer.height;
     Renderer.resize();
+    const newW = Renderer.width;
+    const newH = Renderer.height;
     // Regenerate levels for new size (positions depend on canvas size)
-    levels = LevelManager.getLevels(window.innerWidth, window.innerHeight);
+    levels = LevelManager.getLevels(newW, newH);
+    if (level && phase === 'placing' && oldW > 0 && oldH > 0) {
+      const scaleX = newW / oldW;
+      const scaleY = newH / oldH;
+      for (const w of wells) {
+        w.x *= scaleX;
+        w.y *= scaleY;
+      }
+      level = LevelManager.cloneLevel(levels[currentLevelIndex]);
+    }
   }
 
   // ===== Game Actions =====

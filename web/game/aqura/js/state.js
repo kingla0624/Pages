@@ -179,13 +179,23 @@ export class GameState {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.fishes) && parsed.fishes.length > 0) {
-          return parsed;
+          const defaults = this.getDefaultData();
+          return {
+            ...defaults,
+            ...parsed,
+            decorations: Array.isArray(parsed.decorations) ? parsed.decorations : defaults.decorations,
+            stats: { ...defaults.stats, ...(parsed.stats || {}) }
+          };
         }
       }
     } catch (e) {
       console.warn("Could not load save state, falling back to default.", e);
     }
 
+    return this.getDefaultData();
+  }
+
+  getDefaultData() {
     return {
       coins: 80,
       cleanliness: 95, // 0 to 100

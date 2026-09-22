@@ -21,13 +21,38 @@ export class DecorationManager {
     while (this.rootGroup.children.length > 0) {
       const obj = this.rootGroup.children[0];
       this.rootGroup.remove(obj);
+      this.disposeObject(obj);
     }
     this.animatedDecorations = [];
     this.bubbleEmitters = [];
   }
 
+  disposeObject(obj) {
+    obj.traverse(child => {
+      if (child.isMesh) {
+        child.geometry?.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(m => {
+              if (m !== this.sharedShadowMat) {
+                m.map?.dispose();
+                m.bumpMap?.dispose();
+                m.dispose();
+              }
+            });
+          } else if (child.material !== this.sharedShadowMat) {
+            child.material.map?.dispose();
+            child.material.bumpMap?.dispose();
+            child.material.dispose();
+          }
+        }
+      }
+    });
+  }
+
   loadFromState(decorationsList) {
     this.clear();
+    if (!Array.isArray(decorationsList)) return;
     for (const dec of decorationsList) {
       this.addDecoration(dec);
     }

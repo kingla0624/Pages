@@ -208,7 +208,7 @@
 				renderer.setScissor( 0, 0, sliderPos, window.innerHeight );
 				renderer.render( sceneL, camera );
 
-				renderer.setScissor( sliderPos, 0, window.innerWidth, window.innerHeight );
+				renderer.setScissor( sliderPos, 0, window.innerWidth - sliderPos, window.innerHeight );
 				renderer.render( sceneR, camera );
 
 			}

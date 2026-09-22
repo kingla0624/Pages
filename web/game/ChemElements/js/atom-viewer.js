@@ -8,9 +8,13 @@ const AtomViewer = (() => {
   let animId = null;
   let electrons = [];
   let initialized = false;
+  let lastTime = 0;
 
   function init(canvasEl) {
     canvas = canvasEl;
+    document.addEventListener('visibilitychange', () => {
+      lastTime = 0;
+    });
   }
 
   function ensureRenderer() {
@@ -59,10 +63,16 @@ const AtomViewer = (() => {
     renderer.setSize(w, h);
   }
 
-  function animate() {
+  function animate(time) {
     animId = requestAnimationFrame(animate);
+    if (document.hidden) return;
+    const now = time || performance.now();
+    if (!lastTime) lastTime = now;
+    const dt = Math.min((now - lastTime) / 1000, 0.1);
+    lastTime = now;
+
     for (const e of electrons) {
-      e.angle += e.speed * 0.016;
+      e.angle += e.speed * dt;
       e.mesh.position.x = Math.cos(e.angle) * e.radius;
       e.mesh.position.y = Math.sin(e.angle) * e.radius;
     }

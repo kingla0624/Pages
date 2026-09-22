@@ -258,11 +258,17 @@ export class GoldenScene {
     });
 
     window.addEventListener("resize", () => this.onResize());
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        this.clock.getDelta();
+      }
+    });
     this.animate();
   }
 
   onResize() {
     const { clientWidth, clientHeight } = this.container;
+    if (!clientWidth || !clientHeight) return;
     this.camera.aspect = clientWidth / clientHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(clientWidth, clientHeight);
@@ -294,7 +300,12 @@ export class GoldenScene {
   }
 
   animate() {
-    const delta = this.clock.getDelta();
+    if (document.hidden) {
+      requestAnimationFrame(() => this.animate());
+      return;
+    }
+    const rawDelta = this.clock.getDelta();
+    const delta = Math.min(rawDelta, 0.1);
     const time = this.clock.elapsedTime;
     this.updateCamera(delta, time);
     this.updateDog(delta, time);

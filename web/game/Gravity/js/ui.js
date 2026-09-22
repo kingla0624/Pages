@@ -52,6 +52,7 @@ const UI = (() => {
   let onResume = null;
   let onNextLevel = null;
   let onBackToMenu = null;
+  let onStrengthChange = null;
   let onTutorialDismiss = null;
 
   function init(callbacks) {
@@ -62,6 +63,7 @@ const UI = (() => {
     onResume = callbacks.onResume;
     onNextLevel = callbacks.onNextLevel;
     onBackToMenu = callbacks.onBackToMenu;
+    onStrengthChange = callbacks.onStrengthChange;
     onTutorialDismiss = callbacks.onTutorialDismiss;
 
     bindEvents();
@@ -161,7 +163,9 @@ const UI = (() => {
 
     // Strength slider
     els.wellStrength.addEventListener('input', () => {
-      els.strengthValue.textContent = els.wellStrength.value;
+      const val = parseInt(els.wellStrength.value, 10);
+      els.strengthValue.textContent = val;
+      if (onStrengthChange) onStrengthChange(val);
     });
   }
 

@@ -124,7 +124,6 @@ export class FoodManager {
       // Despawn expired food
       if (f.life <= 0 || f.bitesLeft <= 0) {
         this.rootGroup.remove(f.mesh);
-        f.mesh.geometry.dispose();
         this.foods.splice(i, 1);
       }
     }
@@ -172,5 +171,16 @@ export class FoodManager {
       // Shrink remaining flake
       foodItem.mesh.scale.multiplyScalar(0.7);
     }
+  }
+
+  destroy() {
+    for (const f of this.foods) {
+      this.rootGroup.remove(f.mesh);
+    }
+    this.foods = [];
+    this.pelletGeom?.dispose();
+    this.flakeGeom?.dispose();
+    this.foodMat1?.dispose();
+    this.foodMat2?.dispose();
   }
 }

@@ -38,6 +38,18 @@ export class AudioManager {
     }
   }
 
+  suspend() {
+    if (this.ctx && this.ctx.state === "running") {
+      this.ctx.suspend();
+    }
+  }
+
+  resume() {
+    if (this.ctx && this.ctx.state === "suspended") {
+      this.ctx.resume();
+    }
+  }
+
   toggleMute() {
     this.ensureContext();
     this.isMuted = !this.isMuted;
