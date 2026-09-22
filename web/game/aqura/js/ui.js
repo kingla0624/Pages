@@ -57,6 +57,27 @@ export class UIManager {
         const tool = btn.getAttribute("data-tool");
         this.state.setActiveTool(tool);
         this.updateToolButtons(tool);
+
+        if (tool === "clean") {
+          this.state.cleanTank(25);
+          this.scene.setCleanliness(this.state.data.cleanliness);
+          this.scene.spawnBubbleBurst(0, -2.0, -3.0, 32);
+          this.audio.playClean();
+          this.updateStatsDisplay();
+          this.showToast("🌊 洋流奔涌！冲刷藻斑，带来晶莹澄澈水质！");
+        } else if (tool === "feed") {
+          this.foodManager.spawnFood((Math.random() - 0.5) * 3, -1.0 + (Math.random() - 0.5) * 2);
+          this.showToast("🦐 投撒海粮！点击海面任意位置可继续投喂");
+        } else if (tool === "tap") {
+          this.fishManager.sendWavePulse(new THREE.Vector3(0, 0, -2));
+          this.showToast("💫 扰动水流！观察群鱼惊起与洋流感应");
+        } else if (tool === "inspect") {
+          if (this.fishManager.fishList.length > 0) {
+            const nextIdx = (this.inspectIdx || 0) % this.fishManager.fishList.length;
+            this.inspectIdx = nextIdx + 1;
+            this.inspectFish(this.fishManager.fishList[nextIdx]);
+          }
+        }
       });
     });
 
@@ -232,16 +253,20 @@ export class UIManager {
 
   inspectFish(fishInstance) {
     this.selectedFishInstance = fishInstance;
-    this.scene.setFollowTarget(fishInstance.group);
+    this.scene.setFollowTarget(fishInstance.group, fishInstance);
 
     const f = fishInstance.data;
-    const cat = FISH_CATALOG[fishInstance.type];
+    const cat = FISH_CATALOG[fishInstance.type] || {
+      name: f.name || "野生生灵",
+      rarity: "传奇",
+      desc: "巡弋在辽阔蔚蓝深处的野生海洋巨灵，优雅自在。"
+    };
 
     document.querySelector("#fishName").textContent = f.name;
     document.querySelector("#fishSpecies").textContent = cat.name;
     document.querySelector("#fishRarity").textContent = cat.rarity;
-    document.querySelector("#fishHunger").style.width = Math.round(f.hunger) + "%";
-    document.querySelector("#fishHappiness").style.width = Math.round(f.happiness) + "%";
+    document.querySelector("#fishHunger").style.width = Math.round(f.hunger || 100) + "%";
+    document.querySelector("#fishHappiness").style.width = Math.round(f.happiness || 100) + "%";
     document.querySelector("#fishDesc").textContent = cat.desc;
 
     this.dom.fishCard.classList.remove("is-hidden");

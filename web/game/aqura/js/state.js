@@ -59,6 +59,15 @@ export const FISH_CATALOG = {
     size: 1.1,
     rarity: "传说",
     colors: { body: 0x00ffff, stripe: 0xe040fb, fin: 0x76ff03 }
+  },
+  manta_ray: {
+    name: "巨型蝠鲼 (Manta Ray)",
+    price: 240,
+    desc: "海洋中的优雅飞鸟，双翼如丝绸般随海流波浪状舒展，巡弋在辽阔蔚蓝深处。",
+    speed: 0.95,
+    size: 2.5,
+    rarity: "传奇",
+    colors: { body: 0x0f172a, stripe: 0xf8fafc, fin: 0x38bdf8 }
   }
 };
 

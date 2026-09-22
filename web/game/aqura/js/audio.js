@@ -80,6 +80,9 @@ export class AudioManager {
 
     // Periodic organic bubble sounds in the background
     this.scheduleBubbleLoop();
+
+    // Periodic distant mystic whale songs across the deep abyss
+    this.scheduleWhaleLoop();
   }
 
   scheduleBubbleLoop() {
@@ -91,6 +94,51 @@ export class AudioManager {
       }
       this.scheduleBubbleLoop();
     }, delay);
+  }
+
+  scheduleWhaleLoop() {
+    if (!this.isAmbientRunning) return;
+    const delay = 24000 + Math.random() * 26000;
+    setTimeout(() => {
+      if (this.isAmbientRunning && !this.isMuted) {
+        this.playWhaleSong();
+      }
+      this.scheduleWhaleLoop();
+    }, delay);
+  }
+
+  playWhaleSong() {
+    if (!this.ctx || this.isMuted) return;
+    const now = this.ctx.currentTime;
+
+    // Distant mystic cetacean / humpback whale vocalization
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+
+    osc.type = "sine";
+    const basePitch = 120 + Math.random() * 40;
+    osc.frequency.setValueAtTime(basePitch, now);
+    osc.frequency.exponentialRampToValueAtTime(basePitch * 1.42, now + 1.4);
+    osc.frequency.exponentialRampToValueAtTime(basePitch * 0.88, now + 2.8);
+    osc.frequency.exponentialRampToValueAtTime(basePitch * 1.18, now + 4.2);
+    osc.frequency.exponentialRampToValueAtTime(basePitch * 0.62, now + 5.6);
+
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(260, now);
+    filter.Q.setValueAtTime(3.2, now);
+
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.14, now + 1.2);
+    gain.gain.linearRampToValueAtTime(0.18, now + 3.2);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 5.8);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.ambientGain);
+
+    osc.start(now);
+    osc.stop(now + 6.0);
   }
 
   playBubble(volume = 0.3) {

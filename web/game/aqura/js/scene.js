@@ -46,8 +46,8 @@ export class AquariumScene {
 
   initScene() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x04162a);
-    this.scene.fog = new THREE.FogExp2(0x04162a, 0.02);
+    this.scene.background = new THREE.Color(0x034a74);
+    this.scene.fog = new THREE.FogExp2(0x034a74, 0.016);
 
     this.camera = new THREE.PerspectiveCamera(46, this.width / this.height, 0.1, 100);
     this.camera.position.set(0, 0.8, this.cameraDistance);
@@ -57,7 +57,9 @@ export class AquariumScene {
     this.renderer.setSize(this.width, this.height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.container.appendChild(this.renderer.domElement);
     this.raycaster = new THREE.Raycaster();
@@ -65,70 +67,106 @@ export class AquariumScene {
 
   initLighting() {
     // Balanced oceanic ambient skylight (true deep-ocean blue skylight)
-    this.ambientLight = new THREE.AmbientLight(0x0284c7, 0.65);
+    this.ambientLight = new THREE.AmbientLight(0x0284c7, 0.55);
     this.scene.add(this.ambientLight);
 
-    // Warm piercing tropical sunlight from above (balanced to prevent color burnout)
-    this.sunLight = new THREE.DirectionalLight(0xfff8ee, 1.25);
-    this.sunLight.position.set(3.5, 10.5, 2.5);
+    // Warm piercing tropical sunlight from above casting realistic soft underwater shadows
+    this.sunLight = new THREE.DirectionalLight(0xfff8ee, 1.45);
+    this.sunLight.position.set(4.5, 12.0, 3.5);
+    this.sunLight.castShadow = true;
+    this.sunLight.shadow.mapSize.width = 2048;
+    this.sunLight.shadow.mapSize.height = 2048;
+    this.sunLight.shadow.camera.near = 1.0;
+    this.sunLight.shadow.camera.far = 36.0;
+    this.sunLight.shadow.bias = -0.0006;
+    this.sunLight.shadow.radius = 2.0;
+
+    // Shadow bounds covering entire reef interaction zone
+    const d = 15;
+    this.sunLight.shadow.camera.left = -d;
+    this.sunLight.shadow.camera.right = d;
+    this.sunLight.shadow.camera.top = d;
+    this.sunLight.shadow.camera.bottom = -d;
     this.scene.add(this.sunLight);
 
     // Soft neutral oceanic daylight fill
     this.fillLight = new THREE.PointLight(0x38bdf8, 0.40, 35);
-    this.fillLight.position.set(0, 0.8, 3.5);
+    this.fillLight.position.set(0, 1.2, 3.5);
     this.scene.add(this.fillLight);
 
     // Seafloor sand reflection bounce light (soft deep marine blue bounce)
-    this.bounceLight = new THREE.DirectionalLight(0x0284c7, 0.20);
+    this.bounceLight = new THREE.DirectionalLight(0x0284c7, 0.22);
     this.bounceLight.position.set(0, -4.5, 1.0);
     this.scene.add(this.bounceLight);
   }
 
   initTank() {
-    // 1. Expansive Sandy Seafloor with organic dunes and tidal current ripple marks
+    // 1. High-Detail PBR Coral Sand Texture
     const sandCanvas = document.createElement("canvas");
-    sandCanvas.width = 512;
-    sandCanvas.height = 512;
+    sandCanvas.width = 1024;
+    sandCanvas.height = 1024;
     const sCtx = sandCanvas.getContext("2d");
-    sCtx.fillStyle = "#d4be8a";
-    sCtx.fillRect(0, 0, 512, 512);
 
-    // Multi-shade organic sand grains + micro-contrast
-    for (let i = 0; i < 22000; i++) {
-      const gx = Math.random() * 512;
-      const gy = Math.random() * 512;
+    // Warm organic marine coral sand base
+    const baseGrad = sCtx.createLinearGradient(0, 0, 1024, 1024);
+    baseGrad.addColorStop(0.0, "#c4ad82");
+    baseGrad.addColorStop(0.5, "#bfa679");
+    baseGrad.addColorStop(1.0, "#b89e70");
+    sCtx.fillStyle = baseGrad;
+    sCtx.fillRect(0, 0, 1024, 1024);
+
+    // Multi-octave natural sand grain sediment & micro-contrast
+    for (let i = 0; i < 45000; i++) {
+      const gx = Math.random() * 1024;
+      const gy = Math.random() * 1024;
       const r = Math.random();
-      if (r > 0.65) {
-        sCtx.fillStyle = "rgba(255, 255, 255, 0.22)";
-      } else if (r > 0.3) {
-        sCtx.fillStyle = "rgba(125, 95, 55, 0.20)";
+      if (r > 0.70) {
+        sCtx.fillStyle = "rgba(255, 255, 255, 0.28)"; // sparkling calcite crystal
+      } else if (r > 0.45) {
+        sCtx.fillStyle = "rgba(105, 80, 48, 0.22)"; // darker mineral grain
+      } else if (r > 0.25) {
+        sCtx.fillStyle = "rgba(180, 145, 95, 0.20)"; // medium amber silt
       } else {
-        sCtx.fillStyle = "rgba(165, 130, 80, 0.16)";
+        sCtx.fillStyle = "rgba(215, 120, 90, 0.15)"; // crushed coral pink speck
       }
-      sCtx.fillRect(gx, gy, 1.2, 1.2);
+      sCtx.fillRect(gx, gy, 1.5, 1.5);
     }
     const sandTex = new THREE.CanvasTexture(sandCanvas);
     sandTex.wrapS = THREE.RepeatWrapping;
     sandTex.wrapT = THREE.RepeatWrapping;
-    sandTex.repeat.set(24, 16);
+    sandTex.repeat.set(18, 14);
 
-    // Wet ocean sand bump map for micro-ridges
+    // High-Resolution Tidal Current Ripple Bump Map
     const bumpCanvas = document.createElement("canvas");
-    bumpCanvas.width = 256;
-    bumpCanvas.height = 256;
+    bumpCanvas.width = 512;
+    bumpCanvas.height = 512;
     const bCtx = bumpCanvas.getContext("2d");
     bCtx.fillStyle = "#808080";
-    bCtx.fillRect(0, 0, 256, 256);
-    for (let i = 0; i < 14000; i++) {
-      const bx = Math.random() * 256;
-      const by = Math.random() * 256;
-      bCtx.fillStyle = Math.random() > 0.5 ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.25)";
+    bCtx.fillRect(0, 0, 512, 512);
+
+    // Harmonic tidal ripples
+    for (let y = 0; y < 512; y++) {
+      for (let x = 0; x < 512; x += 2) {
+        const u = x / 512;
+        const v = y / 512;
+        const wave = Math.sin(u * Math.PI * 12 + Math.cos(v * Math.PI * 4) * 0.8) * 0.5 + 0.5;
+        const val = Math.floor(120 + wave * 35);
+        bCtx.fillStyle = `rgb(${val},${val},${val})`;
+        bCtx.fillRect(x, y, 2, 1);
+      }
+    }
+
+    // Granular micro-bumps
+    for (let i = 0; i < 28000; i++) {
+      const bx = Math.random() * 512;
+      const by = Math.random() * 512;
+      bCtx.fillStyle = Math.random() > 0.5 ? "rgba(255,255,255,0.22)" : "rgba(0,0,0,0.22)";
       bCtx.fillRect(bx, by, 1.5, 1.5);
     }
     const bumpTex = new THREE.CanvasTexture(bumpCanvas);
     bumpTex.wrapS = THREE.RepeatWrapping;
     bumpTex.wrapT = THREE.RepeatWrapping;
-    bumpTex.repeat.set(32, 24);
+    bumpTex.repeat.set(24, 18);
 
     // Expansive 120m x 100m Continental Shelf Seabed with Abyssal Drop-off
     const sandGeom = new THREE.PlaneGeometry(120.0, 100.0, 120, 100);
@@ -139,7 +177,6 @@ export class AquariumScene {
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
       const z = pos.getZ(i);
-      // Gentle slope dropping into distant deep sea trench
       const trenchSlope = z < -8 ? (z + 8) * 0.055 : 0;
       const dune = Math.sin(x * 0.16) * 0.32 
                  + Math.cos(z * 0.20) * 0.25 
@@ -153,14 +190,15 @@ export class AquariumScene {
     this.sandMaterial = new THREE.MeshStandardMaterial({
       map: sandTex,
       bumpMap: bumpTex,
-      bumpScale: 0.04,
+      bumpScale: 0.045,
       color: 0xffffff,
-      roughness: 0.88,
+      roughness: 0.85,
       metalness: 0.02
     });
 
     this.sandMesh = new THREE.Mesh(sandGeom, this.sandMaterial);
     this.sandMesh.position.set(0, this.bounds.minY, -20.0);
+    this.sandMesh.receiveShadow = true;
     this.scene.add(this.sandMesh);
   }
 
@@ -270,6 +308,16 @@ export class AquariumScene {
     });
   }
 
+  spawnBubbleBurst(centerX = 0, centerY = -2, centerZ = -4, count = 25) {
+    for (let i = 0; i < count; i++) {
+      const bx = centerX + (Math.random() - 0.5) * 8.0;
+      const by = centerY + Math.random() * 2.0;
+      const bz = centerZ + (Math.random() - 0.5) * 8.0;
+      const r = 0.03 + Math.random() * 0.06;
+      this.spawnBubble(bx, by, bz, r);
+    }
+  }
+
   updateBubbles(delta, time) {
     for (let i = this.bubbles.length - 1; i >= 0; i--) {
       const b = this.bubbles[i];
@@ -303,23 +351,24 @@ export class AquariumScene {
     this.backDropMat = new THREE.MeshBasicMaterial({
       map: this.backTexture,
       depthWrite: false,
-      side: THREE.BackSide
+      side: THREE.BackSide,
+      fog: false
     });
     this.backDropMesh = new THREE.Mesh(domeGeom, this.backDropMat);
     this.backDropMesh.position.set(0, 10.0, -10.0);
     this.scene.add(this.backDropMesh);
 
-    this.updateBackdropGradient(["#0ea5e9", "#0284c7", "#034674", "#011020"]);
+    this.updateBackdropGradient(["#38bdf8", "#0284c7", "#034a74", "#011936"]);
   }
 
   updateBackdropGradient(colorStops) {
     if (!this.backCtx) return;
     const ctx = this.backCtx;
     const grad = ctx.createLinearGradient(0, 0, 0, 512);
-    grad.addColorStop(0.0, colorStops[0] || "#0ea5e9");
-    grad.addColorStop(0.28, colorStops[1] || "#0284c7");
-    grad.addColorStop(0.65, colorStops[2] || "#034674");
-    grad.addColorStop(1.0, colorStops[3] || colorStops[2] || "#011020");
+    grad.addColorStop(0.0, colorStops[0] || "#38bdf8");
+    grad.addColorStop(0.30, colorStops[1] || "#0284c7");
+    grad.addColorStop(0.62, colorStops[2] || "#034a74");
+    grad.addColorStop(1.0, colorStops[3] || colorStops[2] || "#011936");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 128, 512);
     this.backTexture.needsUpdate = true;
@@ -404,7 +453,8 @@ export class AquariumScene {
         opacity: baseOpacity,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
-        depthWrite: false
+        depthWrite: false,
+        fog: false
       });
 
       const beam = new THREE.Mesh(geom, beamMat);
@@ -509,34 +559,34 @@ export class AquariumScene {
   }
 
   setCleanliness(cleanliness) {
-    // 100 = crystal clear oceanic visibility (fog density 0.019)
-    // 0 = slightly plankton-rich turbid ocean water (fog density 0.027)
+    // 100 = crystal clear oceanic visibility (fog density 0.016)
+    // 0 = slightly plankton-rich turbid ocean water (fog density 0.024)
     if (this.scene && this.scene.fog) {
       const purity = Math.max(0, Math.min(100, cleanliness)) / 100;
-      this.scene.fog.density = 0.027 - purity * 0.008;
+      this.scene.fog.density = 0.024 - purity * 0.008;
     }
   }
 
   applyTheme(themeId) {
     const theme = LIGHTING_THEMES[themeId] || LIGHTING_THEMES.tropical;
 
-    let deepColor = 0x01152a;
-    let stops = ["#0ea5e9", "#0284c7", "#034674", "#01152a"];
+    let deepColor = 0x034a74;
+    let stops = ["#38bdf8", "#0284c7", "#034a74", "#011936"];
 
     if (themeId === "deepsea") {
-      deepColor = 0x010c1c;
-      stops = ["#0284c7", "#03284f", "#021733", "#010c1c"];
+      deepColor = 0x02244a;
+      stops = ["#0284c7", "#034674", "#02244a", "#010d1e"];
     } else if (themeId === "sunset") {
-      deepColor = 0x1a0802;
-      stops = ["#fdba74", "#ea580c", "#7c2d12", "#1a0802"];
+      deepColor = 0x7c2d12;
+      stops = ["#fdba74", "#ea580c", "#7c2d12", "#270802"];
     } else if (themeId === "neon") {
-      deepColor = 0x0c021c;
-      stops = ["#e879f9", "#9333ea", "#3b0764", "#0c021c"];
+      deepColor = 0x4c1d95;
+      stops = ["#f472b6", "#9333ea", "#4c1d95", "#17042b"];
     }
 
     this.scene.background.setHex(deepColor);
     this.scene.fog.color.setHex(deepColor);
-    this.scene.fog.density = 0.021;
+    this.scene.fog.density = theme.fogDensity || 0.016;
 
     this.ambientLight.color.setHex(theme.ambientColor);
     this.ambientLight.intensity = theme.ambientIntensity;
@@ -609,8 +659,9 @@ export class AquariumScene {
     this.renderer.setSize(this.width, this.height);
   }
 
-  setFollowTarget(targetMesh) {
+  setFollowTarget(targetMesh, targetFish = null) {
     this.followTarget = targetMesh;
+    this.followTargetFish = targetFish;
   }
 
   getRaycastPoint(clientX, clientY, targetY = 0) {
@@ -638,24 +689,36 @@ export class AquariumScene {
 
   update(delta, time) {
     // 1. Camera interpolation
-    this.cameraAngleY = THREE.MathUtils.lerp(this.cameraAngleY, this.targetCameraAngleY, delta * 6);
-    this.cameraAngleX = THREE.MathUtils.lerp(this.cameraAngleX, this.targetCameraAngleX, delta * 6);
-    this.cameraDistance = THREE.MathUtils.lerp(this.cameraDistance, this.targetCameraDistance, delta * 6);
+    this.cameraAngleY = THREE.MathUtils.lerp(this.cameraAngleY, this.targetCameraAngleY, delta * 5);
+    this.cameraAngleX = THREE.MathUtils.lerp(this.cameraAngleX, this.targetCameraAngleX, delta * 5);
+    this.cameraDistance = THREE.MathUtils.lerp(this.cameraDistance, this.targetCameraDistance, delta * 5);
 
     let lookTarget = new THREE.Vector3(0, 0.2, 0);
 
     if (this.followTarget) {
       lookTarget = this.followTarget.position.clone();
-      // Smoothly orbit near the target
-      const cx = lookTarget.x + Math.sin(this.cameraAngleY) * 3.6;
-      const cy = lookTarget.y + 0.4 + Math.sin(this.cameraAngleX) * 1.6;
-      const cz = lookTarget.z + Math.cos(this.cameraAngleY) * 3.6;
-      this.camera.position.set(cx, cy, cz);
+      const isManta = this.followTargetFish && this.followTargetFish.isMantaRay;
+      const followDist = isManta ? 10.5 : 2.5;
+      const followHeight = isManta ? 2.8 : 0.40;
+
+      // Smooth chase camera that smoothly orbits near the target
+      const cx = lookTarget.x + Math.sin(this.cameraAngleY) * followDist;
+      const cy = lookTarget.y + followHeight + Math.sin(this.cameraAngleX) * (followDist * 0.45);
+      const cz = lookTarget.z + Math.cos(this.cameraAngleY) * followDist;
+
+      this.camera.position.lerp(new THREE.Vector3(cx, cy, cz), delta * 4.5);
     } else {
       const cx = Math.sin(this.cameraAngleY) * Math.cos(this.cameraAngleX) * this.cameraDistance;
       const cy = Math.sin(this.cameraAngleX) * this.cameraDistance + 0.4;
       const cz = Math.cos(this.cameraAngleY) * Math.cos(this.cameraAngleX) * this.cameraDistance;
-      this.camera.position.set(cx, cy, cz);
+
+      // Diver Float Cam (multi-frequency neutral buoyancy drift simulating human diver breathing & currents)
+      const driftX = Math.sin(time * 0.35) * 0.22 + Math.cos(time * 0.15) * 0.10;
+      const driftY = Math.sin(time * 0.48) * 0.12 + Math.sin(time * 0.24) * 0.08;
+      const driftZ = Math.cos(time * 0.28) * 0.18;
+
+      this.camera.position.set(cx + driftX, cy + driftY, cz + driftZ);
+      lookTarget.add(new THREE.Vector3(driftX * 0.25, driftY * 0.25, 0));
     }
 
     this.camera.lookAt(lookTarget);

@@ -23,24 +23,72 @@ export class FishManager {
 
     // Distant schooling reef fish boids (Chromis viridis)
     this.initDistantSchool();
+
+    // Majestic wild oceanic giant: Ambient Manta Ray patrolling deep sea
+    this.initAmbientMantaRay();
+  }
+
+  createMiniFishGeom() {
+    const geom = new THREE.BufferGeometry();
+    // Streamlined fish mesh with pointed snout, arched dorsal fin and forked tail (forward = +Z)
+    const vertices = new Float32Array([
+      // 0: Snout (leading tip)
+      0.0, 0.0, 0.28,
+      // 1: Dorsal crest
+      0.0, 0.16, 0.02,
+      // 2: Ventral keel
+      0.0, -0.10, 0.04,
+      // 3: Left flank
+      -0.08, 0.02, 0.06,
+      // 4: Right flank
+      0.08, 0.02, 0.06,
+      // 5: Caudal peduncle
+      0.0, 0.01, -0.22,
+      // 6: Upper caudal lobe tip
+      0.0, 0.18, -0.42,
+      // 7: Caudal notch
+      0.0, 0.01, -0.32,
+      // 8: Lower caudal lobe tip
+      0.0, -0.16, -0.42
+    ]);
+
+    const indices = [
+      // Forebody cones
+      0, 1, 3,
+      0, 4, 1,
+      0, 3, 2,
+      0, 2, 4,
+      // Aftbody tapers to peduncle
+      1, 5, 3,
+      1, 4, 5,
+      2, 3, 5,
+      2, 5, 4,
+      // Forked caudal fin (two triangular lobes, double-sided)
+      5, 6, 7,
+      5, 7, 6,
+      5, 7, 8,
+      5, 8, 7
+    ];
+
+    geom.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
   }
 
   initDistantSchool() {
-    // 42 Shimmering Blue-Green Chromis / Anthias reef fish schooling in deep ocean
-    const count = 42;
+    // 56 Shimmering Blue-Green Chromis / Anthias reef fish schooling in deep ocean
+    const count = 56;
     this.schoolCount = count;
 
-    // Streamlined low-poly fish body
-    const geom = new THREE.ConeGeometry(0.12, 0.42, 5);
-    geom.rotateX(Math.PI / 2);
-    geom.scale(0.8, 1.3, 0.45);
+    const geom = this.createMiniFishGeom();
 
     const mat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
       emissive: 0x0284c7,
-      emissiveIntensity: 0.35,
-      roughness: 0.20,
-      metalness: 0.80
+      emissiveIntensity: 0.40,
+      roughness: 0.15,
+      metalness: 0.85
     });
 
     this.schoolMesh = new THREE.InstancedMesh(geom, mat, count);
@@ -52,13 +100,45 @@ export class FishManager {
 
     for (let i = 0; i < count; i++) {
       this.schoolMembers.push({
-        offsetX: (Math.random() - 0.5) * 4.8,
-        offsetY: (Math.random() - 0.5) * 2.2,
-        offsetZ: (Math.random() - 0.5) * 4.8,
+        offsetX: (Math.random() - 0.5) * 5.5,
+        offsetY: (Math.random() - 0.5) * 2.5,
+        offsetZ: (Math.random() - 0.5) * 5.5,
         phase: Math.random() * Math.PI * 2,
-        speedScale: 0.9 + Math.random() * 0.2
+        speedScale: 0.9 + Math.random() * 0.25
       });
     }
+  }
+
+  initAmbientMantaRay() {
+    const config = FISH_CATALOG.manta_ray;
+    const meshData = this.buildCreatureMesh("manta_ray", config);
+    const startY = this.bounds.minY + 2.8;
+    meshData.group.position.set(0, startY, -14.0);
+    this.rootGroup.add(meshData.group);
+
+    this.ambientManta = {
+      id: "ambient_manta",
+      type: "manta_ray",
+      data: {
+        id: "ambient_manta",
+        type: "manta_ray",
+        name: "深海巨翼 (Ocean Manta)",
+        hunger: 100,
+        happiness: 100,
+        size: config.size
+      },
+      group: meshData.group,
+      parts: meshData.parts,
+      velocity: new THREE.Vector3(0.6, 0.05, -0.3),
+      maxSpeed: config.speed,
+      targetPos: new THREE.Vector3(0, startY, -14.0),
+      wanderTimer: 0,
+      scaredTimer: 0,
+      phaseOffset: 0,
+      isMantaRay: true,
+      isAmbient: true
+    };
+    this.fishList.push(this.ambientManta);
   }
 
   updateDistantSchool(delta, time) {
@@ -67,23 +147,23 @@ export class FishManager {
     const count = this.schoolCount;
 
     // School center follows an organic patrol circuit through deep coral reef waters
-    const loopT = time * 0.20;
-    const centerX = Math.sin(loopT) * 15.0;
-    const centerZ = -14.0 + Math.sin(loopT * 2) * 6.0;
-    const centerY = 1.0 + Math.sin(loopT * 1.5) * 1.2;
+    const loopT = time * 0.18;
+    const centerX = Math.sin(loopT) * 16.0;
+    const centerZ = -14.0 + Math.sin(loopT * 2) * 6.5;
+    const centerY = 1.2 + Math.sin(loopT * 1.5) * 1.4;
 
     const nextT = loopT + 0.05;
-    const nextX = Math.sin(nextT) * 15.0;
-    const nextZ = -14.0 + Math.sin(nextT * 2) * 6.0;
-    const nextY = 1.0 + Math.sin(nextT * 1.5) * 1.2;
+    const nextX = Math.sin(nextT) * 16.0;
+    const nextZ = -14.0 + Math.sin(nextT * 2) * 6.5;
+    const nextY = 1.2 + Math.sin(nextT * 1.5) * 1.4;
 
     const heading = new THREE.Vector3(nextX - centerX, nextY - centerY, nextZ - centerZ).normalize();
 
     for (let i = 0; i < count; i++) {
       const m = this.schoolMembers[i];
-      const wave = Math.sin(time * 3.5 + m.phase) * 0.35;
+      const wave = Math.sin(time * 3.8 + m.phase) * 0.38;
       const px = centerX + m.offsetX + wave * heading.z;
-      const py = centerY + m.offsetY + Math.sin(time * 2.0 + m.phase) * 0.15;
+      const py = centerY + m.offsetY + Math.sin(time * 2.2 + m.phase) * 0.18;
       const pz = centerZ + m.offsetZ - wave * heading.x;
 
       dummy.position.set(px, py, pz);
@@ -100,6 +180,7 @@ export class FishManager {
 
     for (let i = this.fishList.length - 1; i >= 0; i--) {
       const f = this.fishList[i];
+      if (f.isAmbient) continue; // Always preserve ambient ocean wildlife
       if (!stateIds.has(f.id)) {
         this.rootGroup.remove(f.group);
         this.fishList.splice(i, 1);
@@ -120,7 +201,11 @@ export class FishManager {
 
     // Initial random position inside open ocean
     let x, y, z;
-    if (fishData.type === "clownfish") {
+    if (fishData.type === "manta_ray") {
+      x = (Math.random() - 0.5) * 22.0;
+      y = this.bounds.minY + 2.0 + Math.random() * 2.2;
+      z = -14.0 + (Math.random() - 0.5) * 8.0;
+    } else if (fishData.type === "clownfish") {
       x = -2.5 + (Math.random() - 0.5) * 6.0;
       y = this.bounds.minY + 0.8 + Math.random() * 2.2;
       z = -2.5 + (Math.random() - 0.5) * 4.0;
@@ -131,6 +216,14 @@ export class FishManager {
     }
 
     meshData.group.position.set(x, y, z);
+
+    // Enable soft underwater shadow casting for fish
+    meshData.group.traverse(child => {
+      if (child.isMesh) {
+        child.castShadow = true;
+      }
+    });
+
     this.rootGroup.add(meshData.group);
 
     const fishInstance = {
@@ -141,7 +234,7 @@ export class FishManager {
       parts: meshData.parts,
       velocity: new THREE.Vector3(
         (Math.random() - 0.5) * config.speed * 0.8,
-        (Math.random() - 0.5) * 0.2,
+        (Math.random() - 0.5) * 0.15,
         (Math.random() - 0.5) * config.speed * 0.8
       ),
       maxSpeed: config.speed,
@@ -149,14 +242,38 @@ export class FishManager {
       wanderTimer: Math.random() * 3,
       scaredTimer: 0,
       phaseOffset: Math.random() * Math.PI * 2,
-      isJellyfish: fishData.type === "jellyfish"
+      isJellyfish: fishData.type === "jellyfish",
+      isMantaRay: fishData.type === "manta_ray",
+      isAmbient: !!fishData.isAmbient
     };
 
     this.fishList.push(fishInstance);
     return fishInstance;
   }
 
+  applyIridescentSheen(mat, sheenHex = 0x38bdf8) {
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uSheenCol = { value: new THREE.Color(sheenHex) };
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <common>",
+        `#include <common>
+         uniform vec3 uSheenCol;`
+      );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <dithering_fragment>",
+        `#include <dithering_fragment>
+         vec3 vDir = normalize(vViewPosition);
+         float fres = 1.0 - max(dot(normal, vDir), 0.0);
+         float rimGlow = pow(fres, 2.8);
+         gl_FragColor.rgb += uSheenCol * rimGlow * 0.45;`
+      );
+    };
+  }
+
   buildCreatureMesh(type, config) {
+    if (type === "manta_ray") {
+      return this.buildMantaRayMesh(config);
+    }
     if (type === "jellyfish") {
       return this.buildJellyfishMesh(config);
     }
@@ -427,11 +544,13 @@ export class FishManager {
       map,
       bumpMap,
       bumpScale: 0.006,
-      roughness: 0.18,
-      metalness: 0.02
+      roughness: 0.16,
+      metalness: 0.04
     });
+    this.applyIridescentSheen(bodyMat, type === "clownfish" ? 0x38bdf8 : (type === "blue_tang" ? 0x67e8f9 : 0x93c5fd));
 
     const finMat = this.createFinMaterial(type, finColor);
+    this.applyIridescentSheen(finMat, 0x67e8f9);
 
     // 2. Anatomically contoured organic body
     const bodyData = this.createFishBodyGeom(type, scale);
@@ -915,41 +1034,186 @@ export class FishManager {
     const parts = {};
     const scale = config.size || 1.1;
 
-    // Translucent glowing bell dome
-    const bellGeom = new THREE.SphereGeometry(0.45 * scale, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55);
-    const bellMat = new THREE.MeshStandardMaterial({
-      color: 0x00ffff,
-      emissive: 0x007799,
-      emissiveIntensity: 0.6,
-      roughness: 0.1,
+    // 1. Contoured Aurelia Saucer Umbrella Bell with 8 Scalloped Lappets
+    const radialSegs = 48;
+    const heightSegs = 20;
+    const bellGeom = new THREE.BufferGeometry();
+    const bellPositions = [];
+    const bellUvs = [];
+    const bellIndices = [];
+
+    const R0 = 0.56 * scale;
+    const H0 = 0.26 * scale;
+
+    for (let j = 0; j <= heightSegs; j++) {
+      const v = j / heightSegs; // 0 at apex, 1 at margin
+      // Saucer profile curve: shallow convex apex, flaring down to margin
+      const r = Math.sin(v * Math.PI * 0.5) * R0;
+      const y = Math.cos(v * Math.PI * 0.5) * H0;
+
+      for (let i = 0; i <= radialSegs; i++) {
+        const u = i / radialSegs;
+        const theta = u * Math.PI * 2;
+
+        // 8 delicate marginal lobes (lappets) near rim
+        const lappet = 1.0 + (v > 0.55 ? Math.cos(theta * 8) * 0.038 * ((v - 0.55) / 0.45) : 0);
+        const px = Math.cos(theta) * r * lappet;
+        const pz = Math.sin(theta) * r * lappet;
+        const py = y;
+
+        bellPositions.push(px, py, pz);
+        bellUvs.push(u, v);
+      }
+    }
+
+    for (let j = 0; j < heightSegs; j++) {
+      for (let i = 0; i < radialSegs; i++) {
+        const a = j * (radialSegs + 1) + i;
+        const b = (j + 1) * (radialSegs + 1) + i;
+        const c = (j + 1) * (radialSegs + 1) + (i + 1);
+        const d = j * (radialSegs + 1) + (i + 1);
+
+        bellIndices.push(a, b, d);
+        bellIndices.push(b, c, d);
+      }
+    }
+
+    bellGeom.setAttribute("position", new THREE.Float32BufferAttribute(bellPositions, 3));
+    bellGeom.setAttribute("uv", new THREE.Float32BufferAttribute(bellUvs, 2));
+    bellGeom.setIndex(bellIndices);
+    bellGeom.computeVertexNormals();
+
+    const bellMat = new THREE.MeshPhysicalMaterial({
+      color: 0xecfeff,
+      emissive: 0x06b6d4,
+      emissiveIntensity: 0.32,
+      roughness: 0.08,
+      metalness: 0.02,
+      transmission: 0.88,
+      thickness: 0.30,
+      ior: 1.34,
+      specularColor: 0x67e8f9,
       transparent: true,
-      opacity: 0.75,
-      side: THREE.DoubleSide
+      opacity: 0.90,
+      side: THREE.DoubleSide,
+      depthWrite: false
     });
     const bellMesh = new THREE.Mesh(bellGeom, bellMat);
     group.add(bellMesh);
     parts.bell = bellMesh;
 
-    // Inner glowing core
-    const coreMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.16 * scale, 8, 8), coreMat);
-    core.position.y = 0.1;
-    group.add(core);
+    // Glowing Subumbrella Margin Rim (Velum ring)
+    const rimGeom = new THREE.TorusGeometry(R0 * 0.99, 0.006 * scale, 8, 36);
+    rimGeom.rotateX(Math.PI / 2);
+    const rimMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.65,
+      blending: THREE.AdditiveBlending
+    });
+    const rimMesh = new THREE.Mesh(rimGeom, rimMat);
+    group.add(rimMesh);
+    parts.rim = rimMesh;
 
-    // Trailing tentacles
-    const tentacleCount = 8;
+    // 2. 4 Slender Horseshoe / Cloverleaf Gonads (Translucent Lavender-Pink)
+    const gonadGroup = new THREE.Group();
+    gonadGroup.position.y = 0.12 * scale;
+    const gonadMat = new THREE.MeshPhysicalMaterial({
+      color: 0xf472b6,
+      emissive: 0xd946ef,
+      emissiveIntensity: 0.60,
+      roughness: 0.15,
+      transmission: 0.45,
+      thickness: 0.1,
+      transparent: true,
+      opacity: 0.75,
+      side: THREE.DoubleSide
+    });
+
+    for (let g = 0; g < 4; g++) {
+      const angle = (g * Math.PI) / 2;
+      const gonadGeom = new THREE.TorusGeometry(0.10 * scale, 0.012 * scale, 12, 24, Math.PI * 1.55);
+      const gonadMesh = new THREE.Mesh(gonadGeom, gonadMat);
+      gonadMesh.rotation.x = Math.PI / 2;
+      gonadMesh.rotation.z = angle + Math.PI * 0.22;
+      const rad = 0.14 * scale;
+      gonadMesh.position.set(Math.cos(angle) * rad, 0, Math.sin(angle) * rad);
+      gonadGroup.add(gonadMesh);
+    }
+    group.add(gonadGroup);
+    parts.gonads = gonadGroup;
+
+    // 3. Central Manubrium & 4 Ruffled Ribbon Oral Arms (Chiffon frills with soft feathered edge)
+    const oralArms = [];
+    if (!this.oralArmTexture) {
+      this.oralArmTexture = this.createOralArmTexture();
+    }
+    const armMat = new THREE.MeshStandardMaterial({
+      map: this.oralArmTexture,
+      color: 0xffffff,
+      emissive: 0x9333ea,
+      emissiveIntensity: 0.28,
+      roughness: 0.22,
+      metalness: 0.04,
+      transparent: true,
+      opacity: 0.82,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+
+    const armLength = 1.35 * scale;
+    for (let a = 0; a < 4; a++) {
+      const armAngle = (a * Math.PI) / 2 + Math.PI / 4;
+      const vSegments = 26;
+      const uSegments = 4;
+      const armGeom = new THREE.PlaneGeometry(0.15 * scale, armLength, uSegments, vSegments);
+      armGeom.translate(0, -armLength / 2, 0); // anchor at top
+
+      // Sculpt initial gentle ruffles into the chiffon ribbon
+      const armPos = armGeom.attributes.position;
+      const baseArmPos = new Float32Array(armPos.array);
+
+      for (let i = 0; i < armPos.count; i++) {
+        const py = armPos.getY(i);
+        const vNorm = THREE.MathUtils.clamp(-py / armLength, 0, 1);
+        const widthFactor = 1.0 - vNorm * 0.65;
+        armPos.setX(i, armPos.getX(i) * widthFactor);
+        const ruffle = Math.sin(vNorm * 16.0 + a * 2.0) * (0.024 * scale * (0.2 + 0.8 * vNorm));
+        armPos.setZ(i, ruffle);
+      }
+      armGeom.computeVertexNormals();
+
+      const armMesh = new THREE.Mesh(armGeom, armMat);
+      armMesh.rotation.y = armAngle;
+      const rAnchor = 0.06 * scale;
+      armMesh.position.set(Math.cos(armAngle) * rAnchor, 0.02 * scale, Math.sin(armAngle) * rAnchor);
+
+      group.add(armMesh);
+      oralArms.push({
+        mesh: armMesh,
+        geom: armGeom,
+        basePos: baseArmPos,
+        phase: armAngle,
+        armLength
+      });
+    }
+    parts.oralArms = oralArms;
+
+    // 4. Marginal Translucent Filaments / Tentacles (24 delicate rim threads)
+    const tentacleCount = 24;
     const tentacles = [];
     const tentacleMat = new THREE.MeshBasicMaterial({
-      color: 0x80d8ff,
+      color: 0x93c5fd,
       transparent: true,
-      opacity: 0.65
+      opacity: 0.45,
+      depthWrite: false
     });
 
     for (let i = 0; i < tentacleCount; i++) {
       const angle = (i / tentacleCount) * Math.PI * 2;
-      const rad = 0.35 * scale;
-      const tGeom = new THREE.CylinderGeometry(0.015 * scale, 0.005 * scale, 1.2 * scale, 4);
-      tGeom.translate(0, -0.6 * scale, 0);
+      const rad = R0 * 0.98;
+      const tGeom = new THREE.CylinderGeometry(0.003 * scale, 0.001 * scale, 1.10 * scale, 3);
+      tGeom.translate(0, -0.55 * scale, 0);
 
       const tMesh = new THREE.Mesh(tGeom, tentacleMat);
       tMesh.position.set(Math.cos(angle) * rad, 0, Math.sin(angle) * rad);
@@ -957,6 +1221,309 @@ export class FishManager {
       tentacles.push({ mesh: tMesh, phase: angle });
     }
     parts.tentacles = tentacles;
+
+    return { group, parts };
+  }
+
+  createOralArmTexture() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 256;
+    const ctx = canvas.getContext("2d");
+    const imgData = ctx.createImageData(128, 256);
+    const data = imgData.data;
+
+    for (let y = 0; y < 256; y++) {
+      const v = y / 256;
+      const vertFade = Math.pow(1 - v * 0.75, 1.1);
+
+      for (let x = 0; x < 128; x++) {
+        const u = x / 128;
+        const horizEdge = Math.sin(u * Math.PI);
+        const alpha = Math.floor(255 * Math.pow(horizEdge, 0.75) * vertFade * 0.70);
+
+        const idx = (y * 128 + x) * 4;
+        data[idx] = 252;
+        data[idx + 1] = 244;
+        data[idx + 2] = 255;
+        data[idx + 3] = alpha;
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+  }
+
+  createMantaRayTexture() {
+    const w = 1024;
+    const h = 1024;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+
+    // 1. Top half (0..512): Dorsal skin (Midnight slate-navy with white chevron mantles)
+    const dGrad = ctx.createLinearGradient(0, 0, 0, 512);
+    dGrad.addColorStop(0.0, "#080c14");
+    dGrad.addColorStop(0.5, "#0d1524");
+    dGrad.addColorStop(1.0, "#090d16");
+    ctx.fillStyle = dGrad;
+    ctx.fillRect(0, 0, w, 512);
+
+    // Micro-denticle organic speckles
+    ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+    for (let i = 0; i < 4000; i++) {
+      ctx.fillRect(Math.random() * w, Math.random() * 512, 1.5, 1.5);
+    }
+
+    // Iconic Manta Shoulder Mantle markings (Symmetrical bright white chevrons)
+    // Left shoulder
+    ctx.fillStyle = "rgba(241, 245, 249, 0.92)";
+    ctx.beginPath();
+    ctx.moveTo(380, 110);
+    ctx.bezierCurveTo(310, 160, 200, 240, 140, 310);
+    ctx.bezierCurveTo(180, 300, 290, 220, 370, 190);
+    ctx.closePath();
+    ctx.fill();
+
+    // Right shoulder
+    ctx.beginPath();
+    ctx.moveTo(644, 110);
+    ctx.bezierCurveTo(714, 160, 824, 240, 884, 310);
+    ctx.bezierCurveTo(844, 300, 734, 220, 654, 190);
+    ctx.closePath();
+    ctx.fill();
+
+    // White trailing wingtip borders
+    ctx.strokeStyle = "rgba(248, 250, 252, 0.85)";
+    ctx.lineWidth = 14;
+    ctx.beginPath();
+    ctx.moveTo(80, 290);
+    ctx.quadraticCurveTo(50, 330, 120, 360);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(944, 290);
+    ctx.quadraticCurveTo(974, 330, 904, 360);
+    ctx.stroke();
+
+    // Caudal base pale spots
+    ctx.fillStyle = "rgba(226, 232, 240, 0.65)";
+    for (let i = 0; i < 28; i++) {
+      const sx = 512 + (Math.random() - 0.5) * 80;
+      const sy = 420 + Math.random() * 70;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 2.5 + Math.random() * 3.0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 2. Bottom half (512..1024): Ventral skin (Creamy porcelain white with gills & unique spot cluster)
+    const vGrad = ctx.createLinearGradient(0, 512, 0, 1024);
+    vGrad.addColorStop(0.0, "#f8fafc");
+    vGrad.addColorStop(0.6, "#f1f5f9");
+    vGrad.addColorStop(1.0, "#e2e8f0");
+    ctx.fillStyle = vGrad;
+    ctx.fillRect(0, 512, w, 512);
+
+    // Mouth slit (terminal transverse opening at front)
+    ctx.fillStyle = "#1e293b";
+    ctx.beginPath();
+    ctx.ellipse(512, 580, 110, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 5 pairs of dark branchial gill slits along pectoral girdle
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 5.0;
+    ctx.lineCap = "round";
+    for (let g = 0; g < 5; g++) {
+      const gy = 670 + g * 26;
+      const spread = 70 + g * 12;
+      const slitLen = 42 - g * 4;
+
+      // Left gill slit
+      ctx.beginPath();
+      ctx.moveTo(512 - spread, gy - slitLen / 2);
+      ctx.quadraticCurveTo(512 - spread + 8, gy, 512 - spread, gy + slitLen / 2);
+      ctx.stroke();
+
+      // Right gill slit
+      ctx.beginPath();
+      ctx.moveTo(512 + spread, gy - slitLen / 2);
+      ctx.quadraticCurveTo(512 + spread - 8, gy, 512 + spread, gy + slitLen / 2);
+      ctx.stroke();
+    }
+
+    // Distinctive belly spot cluster ("fingerprint")
+    ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
+    const spotSeeds = [
+      [-35, 830, 7], [42, 845, 6], [-12, 860, 8], [24, 880, 7],
+      [-55, 875, 5], [60, 865, 6], [-28, 910, 8], [15, 920, 6],
+      [-6, 940, 7], [-45, 930, 5], [38, 935, 6]
+    ];
+    for (const [ox, oy, rad] of spotSeeds) {
+      ctx.beginPath();
+      ctx.arc(512 + ox, oy, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Bump map
+    const bCanvas = document.createElement("canvas");
+    bCanvas.width = 512;
+    bCanvas.height = 512;
+    const bCtx = bCanvas.getContext("2d");
+    bCtx.fillStyle = "#808080";
+    bCtx.fillRect(0, 0, 512, 512);
+
+    for (let i = 0; i < 8000; i++) {
+      bCtx.fillStyle = Math.random() > 0.5 ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)";
+      bCtx.fillRect(Math.random() * 512, Math.random() * 512, 1.5, 1.5);
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const bumpTex = new THREE.CanvasTexture(bCanvas);
+    return { map: tex, bumpMap: bumpTex };
+  }
+
+  buildMantaRayMesh(config) {
+    const group = new THREE.Group();
+    const scale = config.size || 2.4;
+    const parts = {};
+
+    // 1. Disc Body Geometry (Watertight manifold batoid hydrofoil)
+    const numRings = 40;     // along length (Z from tail to snout)
+    const numSegments = 36;  // around circumference (theta from 0 to 2*PI)
+    const geom = new THREE.BufferGeometry();
+    const vertices = [];
+    const uvs = [];
+    const indices = [];
+
+    // Longitudinal stations: v from 0 (tail notch) to 1 (snout)
+    for (let r = 0; r <= numRings; r++) {
+      const v = r / numRings;
+      const z = (-1.3 + v * 2.7) * scale;
+
+      // Planform half-width at station v:
+      let wHalf;
+      if (v < 0.65) {
+        const uTrail = v / 0.65;
+        wHalf = (0.25 + Math.sin(uTrail * Math.PI * 0.5) * 1.95) * scale;
+      } else {
+        const uLead = (v - 0.65) / 0.35;
+        wHalf = (2.2 - Math.pow(uLead, 1.2) * 1.75) * scale;
+      }
+
+      // Disk thickness at station v:
+      const tDisk = (0.32 * Math.sin(v * Math.PI * 0.9 + 0.15)) * scale;
+
+      for (let s = 0; s <= numSegments; s++) {
+        const theta = (s / numSegments) * Math.PI * 2;
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
+
+        const x = sinT * wHalf;
+        const edgeTaper = Math.max(0.035, 1.0 - Math.pow(Math.abs(sinT), 1.35) * 0.92);
+        let y = cosT * tDisk * edgeTaper;
+        if (cosT < 0) {
+          y *= 0.65; // Ventral belly is flatter
+        }
+
+        vertices.push(x, y, z);
+
+        // Separate UV mapping for dorsal and ventral halves
+        let uTex, vTex;
+        if (cosT >= 0) {
+          // Dorsal (canvas top half, WebGL V in 0.52..0.98)
+          uTex = sinT * 0.48 + 0.50;
+          vTex = 0.52 + (1.0 - v) * 0.46;
+        } else {
+          // Ventral (canvas bottom half, WebGL V in 0.01..0.49)
+          uTex = sinT * 0.48 + 0.50;
+          vTex = (1.0 - v) * 0.48 + 0.01;
+        }
+        uvs.push(uTex, vTex);
+      }
+    }
+
+    for (let r = 0; r < numRings; r++) {
+      for (let s = 0; s < numSegments; s++) {
+        const i0 = r * (numSegments + 1) + s;
+        const i1 = (r + 1) * (numSegments + 1) + s;
+        const i2 = (r + 1) * (numSegments + 1) + (s + 1);
+        const i3 = r * (numSegments + 1) + (s + 1);
+
+        indices.push(i0, i1, i2);
+        indices.push(i0, i2, i3);
+      }
+    }
+
+    geom.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+    geom.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+
+    const { map, bumpMap } = this.createMantaRayTexture();
+    const mat = new THREE.MeshStandardMaterial({
+      map,
+      bumpMap,
+      bumpScale: 0.005,
+      roughness: 0.20,
+      metalness: 0.05
+    });
+
+    this.applyIridescentSheen(mat, 0x38bdf8);
+
+    const discMesh = new THREE.Mesh(geom, mat);
+    discMesh.castShadow = true;
+    group.add(discMesh);
+    parts.discMesh = discMesh;
+    parts.basePositions = vertices.slice();
+    parts.scale = scale;
+
+    // Shared dark dorsal material with iridescent sheen
+    const darkDorsalMat = new THREE.MeshStandardMaterial({
+      color: 0x090f1a,
+      roughness: 0.22,
+      metalness: 0.05
+    });
+    this.applyIridescentSheen(darkDorsalMat, 0x38bdf8);
+
+    // 2. Cephalic Horns (Dual forward-curling flaps with dark dorsal mantle finish)
+    [-1, 1].forEach(side => {
+      const hornCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(side * 0.40 * scale, -0.02 * scale, 1.35 * scale),
+        new THREE.Vector3(side * 0.42 * scale, -0.01 * scale, 1.65 * scale),
+        new THREE.Vector3(side * 0.35 * scale, -0.05 * scale, 1.88 * scale),
+        new THREE.Vector3(side * 0.22 * scale, -0.08 * scale, 1.95 * scale)
+      ]);
+      const hornGeom = new THREE.TubeGeometry(hornCurve, 16, 0.055 * scale, 8, false);
+      const hornMesh = new THREE.Mesh(hornGeom, darkDorsalMat);
+      hornMesh.castShadow = true;
+      group.add(hornMesh);
+    });
+
+    // 3. Slender Whip Tail with Dark Dorsal Sheen
+    const tailCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0.02 * scale, -1.25 * scale),
+      new THREE.Vector3(0, 0.01 * scale, -1.65 * scale),
+      new THREE.Vector3(0, -0.04 * scale, -2.15 * scale),
+      new THREE.Vector3(0, -0.10 * scale, -2.60 * scale)
+    ]);
+    const tailGeom = new THREE.TubeGeometry(tailCurve, 24, 0.026 * scale, 8, false);
+    const tailMesh = new THREE.Mesh(tailGeom, darkDorsalMat);
+    tailMesh.castShadow = true;
+    group.add(tailMesh);
+    parts.tailMesh = tailMesh;
+
+    // 4. Tiny Dorsal Fin at Tail Base
+    const dShape = new THREE.Shape();
+    dShape.moveTo(0, 0);
+    dShape.lineTo(0, 0.12 * scale);
+    dShape.lineTo(-0.16 * scale, 0);
+    dShape.closePath();
+    const dMesh = new THREE.Mesh(new THREE.ShapeGeometry(dShape), darkDorsalMat);
+    dMesh.position.set(0, 0.06 * scale, -1.25 * scale);
+    dMesh.rotation.y = Math.PI / 2;
+    group.add(dMesh);
 
     return { group, parts };
   }
@@ -1032,8 +1599,17 @@ export class FishManager {
       if (!targetPos && f.scaredTimer <= 0) {
         f.wanderTimer -= delta;
         if (f.wanderTimer <= 0) {
-          f.wanderTimer = 3.5 + Math.random() * 5.0;
-          if (f.type === "clownfish") {
+          if (f.isMantaRay) {
+            f.wanderTimer = 7.0 + Math.random() * 5.0;
+            const angle = Math.random() * Math.PI * 2;
+            const rad = 14.0 + Math.random() * 8.0;
+            f.targetPos.set(
+              Math.cos(angle) * rad,
+              this.bounds.minY + 2.0 + Math.random() * 2.2,
+              -14.0 + Math.sin(angle) * 7.0
+            );
+          } else if (f.type === "clownfish") {
+            f.wanderTimer = 3.5 + Math.random() * 5.0;
             // Clownfish stay primarily around reef knolls and sea anemones
             f.targetPos.set(
               -6.0 + Math.random() * 12.0,
@@ -1041,6 +1617,7 @@ export class FishManager {
               -5.5 + Math.random() * 6.5
             );
           } else {
+            f.wanderTimer = 3.5 + Math.random() * 5.0;
             // Open ocean pelagic cruisers: wide oceanic patrol circuits across open seafloor
             f.targetPos.set(
               (Math.random() - 0.5) * 44.0,
@@ -1056,7 +1633,7 @@ export class FishManager {
       if (targetPos) {
         const desired = new THREE.Vector3().subVectors(targetPos, pos).normalize().multiplyScalar(targetSpeed);
         const steer = new THREE.Vector3().subVectors(desired, f.velocity);
-        steer.clampLength(0, 2.5 * delta);
+        steer.clampLength(0, (f.isMantaRay ? 1.4 : 2.5) * delta);
         f.velocity.add(steer);
       }
 
@@ -1103,20 +1680,115 @@ export class FishManager {
       pos.z = THREE.MathUtils.clamp(pos.z, -28.0, 4.5);
 
       // 5. Rotation & Heading
-      if (f.isJellyfish) {
-        // Jellyfish pulse upwards and bob gently
-        const pulse = Math.sin(time * 3 + f.phaseOffset);
-        const scaleBell = 1.0 + Math.max(0, pulse) * 0.25;
-        f.parts.bell.scale.set(scaleBell, 1.0 - pulse * 0.15, scaleBell);
-        
-        // Tilt slightly towards travel direction
-        f.group.rotation.x = Math.sin(time * 1.2) * 0.1;
-        f.group.rotation.z = Math.cos(time * 1.2) * 0.1;
+      if (f.isMantaRay) {
+        // Manta Ray Heading, Banking Roll & Traveling Wing Wave Kinematics
+        if (f.velocity.lengthSq() > 0.001) {
+          const lookTarget = pos.clone().add(f.velocity);
+          f.group.lookAt(lookTarget);
+        }
 
-        // Animate trailing tentacles
-        for (const t of f.parts.tentacles) {
-          t.mesh.rotation.x = Math.sin(time * 2 + t.phase) * 0.2;
-          t.mesh.rotation.z = Math.cos(time * 2 + t.phase) * 0.2;
+        // Natural banking roll proportional to turn rate
+        const bank = -f.velocity.x * 0.22;
+        f.group.rotation.z = bank;
+        const pitch = -Math.atan2(f.velocity.y, Math.max(0.1, Math.hypot(f.velocity.x, f.velocity.z)));
+        f.group.rotation.x = pitch;
+
+        // Batoid Traveling Pectoral Flap Kinematics
+        const s = f.parts.scale || 2.4;
+        const omega = 1.8;
+        const tWave = time * omega + f.phaseOffset;
+
+        if (f.parts.discMesh && f.parts.basePositions) {
+          const posAttr = f.parts.discMesh.geometry.attributes.position;
+          const basePos = f.parts.basePositions;
+          const count = posAttr.count;
+          const maxSpan = 2.2 * s;
+
+          for (let k = 0; k < count; k++) {
+            const origX = basePos[k * 3];
+            const origY = basePos[k * 3 + 1];
+            const origZ = basePos[k * 3 + 2];
+
+            const spanRatio = Math.min(1.0, Math.abs(origX) / maxSpan);
+            // Traveling wave flapped down trailing edge
+            const wingFlap = Math.sin(tWave - origZ * 0.75) * Math.pow(spanRatio, 1.35) * (0.50 * s);
+            const bodyHeave = Math.cos(tWave) * (0.035 * s);
+
+            posAttr.setY(k, origY + wingFlap + bodyHeave);
+
+            if (spanRatio > 0.45) {
+              const curl = Math.cos(tWave - origZ * 0.75) * Math.pow(spanRatio, 1.8) * (0.07 * s);
+              posAttr.setZ(k, origZ - curl);
+            }
+          }
+          posAttr.needsUpdate = true;
+          f.parts.discMesh.geometry.computeVertexNormals();
+        }
+
+        // Whip tail trailing undulation
+        if (f.parts.tailMesh) {
+          f.parts.tailMesh.rotation.x = Math.sin(tWave - 1.8) * 0.10;
+          f.parts.tailMesh.rotation.y = Math.cos(tWave - 1.8) * 0.08;
+        }
+      } else if (f.isJellyfish) {
+        // Asymmetric two-phase propulsion cycle (power stroke vs recovery glide)
+        const cyclePeriod = 2.4;
+        const tCycle = (time * 1.2 + f.phaseOffset) % cyclePeriod;
+        let scaleBellXZ = 1.0;
+        let scaleBellY = 1.0;
+
+        if (tCycle < 0.65) {
+          // Rapid contraction & downward jet thrust
+          const tau = tCycle / 0.65;
+          const power = Math.sin(tau * Math.PI);
+          scaleBellXZ = 1.0 - power * 0.26;
+          scaleBellY = 1.0 + power * 0.22;
+          f.velocity.y += 0.8 * delta;
+        } else {
+          // Slow relaxed expansion glide
+          const tau = (tCycle - 0.65) / (cyclePeriod - 0.65);
+          const relax = Math.cos(tau * Math.PI * 0.5);
+          scaleBellXZ = 1.0 - relax * 0.08;
+          scaleBellY = 1.0 + relax * 0.06;
+        }
+
+        if (f.parts.bell) {
+          f.parts.bell.scale.set(scaleBellXZ, scaleBellY, scaleBellXZ);
+        }
+        if (f.parts.rim) {
+          f.parts.rim.scale.set(scaleBellXZ, 1.0, scaleBellXZ);
+        }
+
+        f.group.rotation.x = Math.sin(time * 1.2) * 0.08;
+        f.group.rotation.z = Math.cos(time * 1.2) * 0.08;
+
+        if (f.parts.tentacles) {
+          for (const t of f.parts.tentacles) {
+            t.mesh.rotation.x = Math.sin(time * 2.5 + t.phase) * 0.18;
+            t.mesh.rotation.z = Math.cos(time * 2.5 + t.phase) * 0.18;
+          }
+        }
+        if (f.parts.oralArms) {
+          for (const arm of f.parts.oralArms) {
+            arm.mesh.rotation.x = Math.sin(time * 1.5 + arm.phase) * 0.12;
+            arm.mesh.rotation.z = Math.cos(time * 1.5 + arm.phase) * 0.12;
+
+            if (arm.geom && arm.basePos) {
+              const pos = arm.geom.attributes.position;
+              const base = arm.basePos;
+              const count = pos.count;
+              const aLen = arm.armLength || (1.35 * (f.data.size || 1.1));
+              for (let k = 0; k < count; k++) {
+                const py = base[k * 3 + 1];
+                const vNorm = THREE.MathUtils.clamp(-py / aLen, 0, 1);
+                const waveX = Math.sin(time * 2.2 - vNorm * 4.5 + arm.phase) * (0.035 * (f.data.size || 1.1) * vNorm);
+                const waveZ = Math.cos(time * 1.8 - vNorm * 4.0 + arm.phase) * (0.028 * (f.data.size || 1.1) * vNorm);
+                pos.setX(k, base[k * 3] * (1 - vNorm * 0.65) + waveX);
+                pos.setZ(k, base[k * 3 + 2] + waveZ);
+              }
+              pos.needsUpdate = true;
+            }
+          }
         }
       } else {
         // Fish heading lookAt

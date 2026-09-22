@@ -67,8 +67,40 @@ export class DecorationManager {
       obj.position.set(dec.x, y + (dec.yOffset || 0), dec.z);
       if (dec.rotY !== undefined) obj.rotation.y = dec.rotY;
       if (dec.scale !== undefined) obj.scale.setScalar(dec.scale);
+
+      // Enable realistic shadow casting and receiving for all decoration meshes
+      obj.traverse(child => {
+        if (child.isMesh && child.material !== this.sharedShadowMat) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
       this.rootGroup.add(obj);
     }
+  }
+
+  getContactShadowMaterial() {
+    if (!this.sharedShadowMat) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext("2d");
+      const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      grad.addColorStop(0.0, "rgba(2, 10, 20, 0.70)");
+      grad.addColorStop(0.40, "rgba(2, 10, 20, 0.40)");
+      grad.addColorStop(0.80, "rgba(2, 10, 20, 0.10)");
+      grad.addColorStop(1.0, "rgba(2, 10, 20, 0.0)");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 128, 128);
+      const tex = new THREE.CanvasTexture(canvas);
+      this.sharedShadowMat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        depthWrite: false
+      });
+    }
+    return this.sharedShadowMat;
   }
 
   createLeafTexture() {
@@ -115,35 +147,52 @@ export class DecorationManager {
     canvas.height = 512;
     const ctx = canvas.getContext("2d");
 
-    // Weathered volcanic basalt base
-    ctx.fillStyle = "#332f2b";
+    // Weathered volcanic basalt and coral limestone base
+    const grad = ctx.createLinearGradient(0, 0, 512, 512);
+    grad.addColorStop(0.0, "#252220");
+    grad.addColorStop(0.4, "#36322e");
+    grad.addColorStop(0.8, "#3e3934");
+    grad.addColorStop(1.0, "#272422");
+    ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 512, 512);
 
-    // Deep mineral sediment layers
-    for (let i = 0; i < 6000; i++) {
+    // Deep mineral sediment layers & crevices
+    for (let i = 0; i < 18000; i++) {
       const rx = Math.random() * 512;
       const ry = Math.random() * 512;
       const r = Math.random();
-      if (r > 0.65) ctx.fillStyle = "rgba(20, 18, 16, 0.35)"; // dark crevices
-      else if (r > 0.35) ctx.fillStyle = "rgba(90, 85, 78, 0.25)"; // light mineral flakes
-      else ctx.fillStyle = "rgba(42, 65, 38, 0.25)"; // deep marine biofilm
-      ctx.fillRect(rx, ry, 2.5, 2.5);
+      if (r > 0.70) ctx.fillStyle = "rgba(12, 11, 9, 0.45)"; // crevice shadow
+      else if (r > 0.40) ctx.fillStyle = "rgba(110, 105, 96, 0.25)"; // light calcite
+      else ctx.fillStyle = "rgba(45, 65, 40, 0.22)"; // marine biofilm
+      ctx.fillRect(rx, ry, 2.0, 2.0);
     }
 
-    // Natural crustose coralline algae (calcified pink/purple patches)
-    const algaeColors = ["#db2777", "#c026d3", "#9333ea", "#e879f9"];
-    for (let p = 0; p < 18; p++) {
+    // Natural crustose coralline algae (irregular organic crusts blending into crevices)
+    const crustColors = [
+      "rgba(190, 24, 93, 0.50)",
+      "rgba(157, 23, 77, 0.45)",
+      "rgba(131, 24, 67, 0.40)",
+      "rgba(168, 85, 247, 0.30)",
+      "rgba(244, 114, 182, 0.35)"
+    ];
+    for (let p = 0; p < 45; p++) {
       const px = Math.random() * 512;
       const py = Math.random() * 512;
-      const rad = 15 + Math.random() * 45;
-      const grad = ctx.createRadialGradient(px, py, 2, px, py, rad);
-      const col = algaeColors[p % algaeColors.length];
-      grad.addColorStop(0.0, col);
-      grad.addColorStop(0.7, col);
-      grad.addColorStop(1.0, "rgba(51, 47, 43, 0)");
-      ctx.fillStyle = grad;
+      const color = crustColors[p % crustColors.length];
+      ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(px, py, rad, 0, Math.PI * 2);
+      // Irregular organic splotch
+      const points = 7 + Math.floor(Math.random() * 5);
+      const baseR = 10 + Math.random() * 20;
+      for (let j = 0; j < points; j++) {
+        const a = (j / points) * Math.PI * 2;
+        const r = baseR * (0.6 + Math.random() * 0.8);
+        const x = px + Math.cos(a) * r;
+        const y = py + Math.sin(a) * r;
+        if (j === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
       ctx.fill();
     }
 
@@ -229,6 +278,12 @@ export class DecorationManager {
       roughness: 0.90,
       metalness: 0.05
     });
+
+    // Contact shadow beneath reef knoll
+    const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 2.8), this.getContactShadowMaterial());
+    shadowMesh.rotateX(-Math.PI / 2);
+    shadowMesh.position.set(0, 0.02, 0);
+    group.add(shadowMesh);
 
     const createSculptedBoulder = (radius, scaleX, scaleY, scaleZ, posX, posZ, rotY) => {
       const geom = new THREE.DodecahedronGeometry(radius, 2);
@@ -470,6 +525,160 @@ export class DecorationManager {
       group.add(sMesh);
     }
 
+    // 6. Branching Gorgonian Sea Fan on rear shelf of reef knoll
+    const seaFan = this.createSeaFan("#e11d48", 1.35, 1.15);
+    seaFan.position.set(-0.35, 0.42, -0.42);
+    seaFan.rotation.y = 0.35;
+    group.add(seaFan);
+
+    // 7. Cluster of Fluorescent Yellow-Gold Tube Sponges
+    const tubeSponges = this.createTubeSponges(0xd97706, 0xfacc15);
+    tubeSponges.position.set(0.68, 0.22, -0.15);
+    group.add(tubeSponges);
+
+    return group;
+  }
+
+  createSeaFanTexture(colorHex = "#e11d48") {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, 256, 256);
+
+    ctx.strokeStyle = colorHex;
+    ctx.lineCap = "round";
+
+    const drawBranch = (x, y, len, angle, depth, width) => {
+      if (depth <= 0) {
+        ctx.fillStyle = "#fef08a";
+        ctx.beginPath();
+        ctx.arc(x, y, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+      const x2 = x + Math.sin(angle) * len;
+      const y2 = y - Math.cos(angle) * len;
+
+      ctx.lineWidth = width;
+      ctx.strokeStyle = colorHex;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+
+      const spread = 0.42;
+      drawBranch(x2, y2, len * 0.76, angle - spread, depth - 1, width * 0.72);
+      drawBranch(x2, y2, len * 0.76, angle + spread, depth - 1, width * 0.72);
+      if (depth >= 3) {
+        drawBranch(x2, y2, len * 0.70, angle, depth - 1, width * 0.70);
+      }
+    };
+
+    drawBranch(128, 250, 48, 0, 5, 5.5);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  createSeaFan(colorHex = "#e11d48", height = 1.35, width = 1.15) {
+    const group = new THREE.Group();
+    const tex = this.createSeaFanTexture(colorHex);
+    const mat = new THREE.MeshStandardMaterial({
+      map: tex,
+      transparent: true,
+      alphaTest: 0.15,
+      roughness: 0.55,
+      side: THREE.DoubleSide
+    });
+
+    const geom = new THREE.PlaneGeometry(width, height);
+    geom.translate(0, height / 2, 0);
+
+    const pos = geom.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      pos.setZ(i, Math.sin((x / width) * Math.PI) * 0.12 * (y / height));
+    }
+    geom.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.castShadow = true;
+    group.add(mesh);
+
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.85 });
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.045, 0.28, 8), trunkMat);
+    trunk.position.y = 0.14;
+    group.add(trunk);
+
+    this.animatedDecorations.push({
+      type: "seafan",
+      mesh: group,
+      baseRotZ: 0,
+      baseRotX: 0,
+      phase: Math.random() * Math.PI * 2
+    });
+
+    return group;
+  }
+
+  createTubeSponges(baseColor = 0xd97706, rimColor = 0xfef08a) {
+    const group = new THREE.Group();
+    const tubeCount = 4 + Math.floor(Math.random() * 3);
+
+    const tubeMat = new THREE.MeshStandardMaterial({
+      color: baseColor,
+      roughness: 0.65,
+      metalness: 0.05
+    });
+
+    const rimMat = new THREE.MeshStandardMaterial({
+      color: rimColor,
+      emissive: rimColor,
+      emissiveIntensity: 0.40,
+      roughness: 0.25
+    });
+
+    const innerMat = new THREE.MeshBasicMaterial({ color: 0x1c1917 });
+
+    for (let i = 0; i < tubeCount; i++) {
+      const height = 0.55 + Math.random() * 0.65;
+      const radius = 0.065 + Math.random() * 0.035;
+      const tGroup = new THREE.Group();
+
+      const geom = new THREE.CylinderGeometry(radius, radius * 1.15, height, 16, 4, true);
+      geom.translate(0, height / 2, 0);
+      const mesh = new THREE.Mesh(geom, tubeMat);
+      mesh.castShadow = true;
+      tGroup.add(mesh);
+
+      const rimGeom = new THREE.TorusGeometry(radius, 0.016, 8, 16);
+      rimGeom.rotateX(Math.PI / 2);
+      const rim = new THREE.Mesh(rimGeom, rimMat);
+      rim.position.y = height;
+      tGroup.add(rim);
+
+      const innerGeom = new THREE.CircleGeometry(radius * 0.85, 12);
+      innerGeom.rotateX(-Math.PI / 2);
+      const inner = new THREE.Mesh(innerGeom, innerMat);
+      inner.position.y = height - 0.02;
+      tGroup.add(inner);
+
+      const angle = (i / tubeCount) * Math.PI * 2;
+      const dist = 0.12 + Math.random() * 0.14;
+      tGroup.position.set(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+      tGroup.rotation.z = (Math.random() - 0.5) * 0.18;
+      tGroup.rotation.x = (Math.random() - 0.5) * 0.18;
+
+      group.add(tGroup);
+    }
+
+    this.animatedDecorations.push({
+      type: "tubesponge",
+      mesh: group,
+      baseRotZ: 0,
+      phase: Math.random() * Math.PI * 2
+    });
+
     return group;
   }
 
@@ -512,6 +721,12 @@ export class DecorationManager {
       emissive: 0x78350f,
       emissiveIntensity: 0.25
     });
+
+    // Contact shadow
+    const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.2), this.getContactShadowMaterial());
+    shadowMesh.rotateX(-Math.PI / 2);
+    shadowMesh.position.set(0, 0.02, 0);
+    group.add(shadowMesh);
 
     // Chest Base
     const baseGeom = new THREE.BoxGeometry(0.85, 0.45, 0.58);
@@ -584,6 +799,12 @@ export class DecorationManager {
     const stoneMat = new THREE.MeshStandardMaterial({ color: 0xd7ccc8, roughness: 0.9 });
     const mossMat = new THREE.MeshStandardMaterial({ color: 0x558b2f, roughness: 0.85 });
 
+    // Contact shadow
+    const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), this.getContactShadowMaterial());
+    shadowMesh.rotateX(-Math.PI / 2);
+    shadowMesh.position.set(0.2, 0.02, 0.1);
+    group.add(shadowMesh);
+
     // Plinth base
     const base = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.25, 0.9), stoneMat);
     base.position.y = 0.125;
@@ -624,6 +845,12 @@ export class DecorationManager {
       emissive: 0x4c1d95,
       emissiveIntensity: 0.15
     });
+
+    // Contact shadow
+    const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.3), this.getContactShadowMaterial());
+    shadowMesh.rotateX(-Math.PI / 2);
+    shadowMesh.position.set(0.1, 0.02, 0.05);
+    group.add(shadowMesh);
 
     const potGroup = new THREE.Group();
 
@@ -768,6 +995,12 @@ export class DecorationManager {
           t.mesh.rotation.z = t.baseRotZ + Math.sin(time * 1.4 + t.phase) * 0.16;
           t.mesh.rotation.x = t.baseRotX + Math.cos(time * 1.2 + t.phase) * 0.16;
         }
+      } else if (item.type === "seafan") {
+        // Organic sea fan swaying with oceanic current
+        item.mesh.rotation.z = item.baseRotZ + Math.sin(time * 1.3 + item.phase) * 0.06;
+        item.mesh.rotation.x = item.baseRotX + Math.cos(time * 1.0 + item.phase) * 0.035;
+      } else if (item.type === "tubesponge") {
+        item.mesh.rotation.z = item.baseRotZ + Math.sin(time * 1.1 + item.phase) * 0.025;
       } else if (item.type === "chest") {
         // 2. Animate treasure chest lid
         item.timer += delta;
