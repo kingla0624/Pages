@@ -1,4 +1,4 @@
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js";
+import * as THREE from "three";
 import { FISH_CATALOG, DECORATION_CATALOG, LIGHTING_THEMES } from "./state.js";
 
 /**
@@ -410,14 +410,18 @@ export class UIManager {
   }
 
   captureSnapshot() {
-    // Render one frame then capture
-    this.scene.renderer.render(this.scene.scene, this.scene.camera);
+    // Render one frame through post-processing pipeline then capture
+    if (this.scene.composer) {
+      this.scene.composer.render();
+    } else {
+      this.scene.renderer.render(this.scene.scene, this.scene.camera);
+    }
     const dataURL = this.scene.renderer.domElement.toDataURL("image/png");
     const a = document.createElement("a");
     a.href = dataURL;
-    a.download = `Aqura_Aquarium_${Date.now()}.png`;
+    a.download = `Aqura_Ocean_${Date.now()}.png`;
     a.click();
-    this.showToast("📸 水族箱美照已保存至下载文件夹！");
+    this.showToast("📸 海底世界美照已保存至下载文件夹！");
   }
 
   showToast(msg) {

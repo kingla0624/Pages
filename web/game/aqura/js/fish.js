@@ -1,4 +1,4 @@
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js";
+import * as THREE from "three";
 import { FISH_CATALOG } from "./state.js";
 
 /**
@@ -9,7 +9,8 @@ import { FISH_CATALOG } from "./state.js";
 
 export class FishManager {
   constructor(scene, tankBounds, audioManager, foodManager, gameState) {
-    this.scene = scene;
+    this.world = scene;
+    this.scene = scene.scene || scene;
     this.bounds = tankBounds;
     this.audio = audioManager;
     this.foodManager = foodManager;
@@ -90,6 +91,10 @@ export class FishManager {
       roughness: 0.15,
       metalness: 0.85
     });
+
+    if (this.world?.injectCaustics) {
+      this.world.injectCaustics(mat, 0.35);
+    }
 
     this.schoolMesh = new THREE.InstancedMesh(geom, mat, count);
     this.schoolMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -274,7 +279,9 @@ export class FishManager {
   }
 
   applyIridescentSheen(mat, sheenHex = 0x38bdf8) {
-    mat.onBeforeCompile = (shader) => {
+    const prev = mat.onBeforeCompile;
+    mat.onBeforeCompile = (shader, renderer) => {
+      if (prev) prev(shader, renderer);
       shader.uniforms.uSheenCol = { value: new THREE.Color(sheenHex) };
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <common>",
@@ -290,6 +297,7 @@ export class FishManager {
          gl_FragColor.rgb += uSheenCol * rimGlow * 0.45;`
       );
     };
+    mat.needsUpdate = true;
   }
 
   buildCreatureMesh(type, config) {
@@ -538,6 +546,7 @@ export class FishManager {
     }
 
     const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
     return new THREE.MeshStandardMaterial({
       map: tex,
       color: 0xffffff,
@@ -573,6 +582,11 @@ export class FishManager {
 
     const finMat = this.createFinMaterial(type, finColor);
     this.applyIridescentSheen(finMat, 0x67e8f9);
+
+    if (this.world?.injectCaustics) {
+      this.world.injectCaustics(bodyMat, 0.38);
+      this.world.injectCaustics(finMat, 0.25);
+    }
 
     // 2. Anatomically contoured organic body
     const bodyData = this.createFishBodyGeom(type, scale);
@@ -1047,6 +1061,7 @@ export class FishManager {
     }
 
     const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
     const bumpTex = new THREE.CanvasTexture(bCanvas);
     return { map: tex, bumpMap: bumpTex };
   }
@@ -1123,6 +1138,10 @@ export class FishManager {
     const bellMesh = new THREE.Mesh(bellGeom, bellMat);
     group.add(bellMesh);
     parts.bell = bellMesh;
+
+    if (this.world?.injectCaustics) {
+      this.world.injectCaustics(bellMat, 0.28);
+    }
 
     // Glowing Subumbrella Margin Rim (Velum ring)
     const rimGeom = new THREE.TorusGeometry(R0 * 0.99, 0.006 * scale, 8, 36);
@@ -1402,6 +1421,7 @@ export class FishManager {
     }
 
     const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
     const bumpTex = new THREE.CanvasTexture(bCanvas);
     return { map: tex, bumpMap: bumpTex };
   }
@@ -1508,6 +1528,11 @@ export class FishManager {
       metalness: 0.05
     });
     this.applyIridescentSheen(darkDorsalMat, 0x38bdf8);
+
+    if (this.world?.injectCaustics) {
+      this.world.injectCaustics(mat, 0.42);
+      this.world.injectCaustics(darkDorsalMat, 0.42);
+    }
 
     // 2. Cephalic Horns (Dual forward-curling flaps with dark dorsal mantle finish)
     [-1, 1].forEach(side => {
@@ -1776,9 +1801,16 @@ export class FishManager {
 
         if (f.parts.bell) {
           f.parts.bell.scale.set(scaleBellXZ, scaleBellY, scaleBellXZ);
+          // Bioluminescent pulse surge during contraction phase
+          if (f.parts.bell.material) {
+            f.parts.bell.material.emissiveIntensity = 0.28 + (1.0 - scaleBellXZ) * 1.8;
+          }
         }
         if (f.parts.rim) {
           f.parts.rim.scale.set(scaleBellXZ, 1.0, scaleBellXZ);
+          if (f.parts.rim.material) {
+            f.parts.rim.material.opacity = 0.45 + (1.0 - scaleBellXZ) * 1.5;
+          }
         }
 
         f.group.rotation.x = Math.sin(time * 1.2) * 0.08;

@@ -20,8 +20,8 @@ class AquraGame {
 
     this.scene = new AquariumScene(this.container);
     this.food = new FoodManager(this.scene.scene, this.scene.bounds, this.audio, this.state);
-    this.decorations = new DecorationManager(this.scene.scene, this.scene.bounds, this.audio);
-    this.fish = new FishManager(this.scene.scene, this.scene.bounds, this.audio, this.food, this.state);
+    this.decorations = new DecorationManager(this.scene, this.scene.bounds, this.audio);
+    this.fish = new FishManager(this.scene, this.scene.bounds, this.audio, this.food, this.state);
     this.ui = new UIManager(this.state, this.audio, this.scene, this.fish, this.food, this.decorations);
 
     this.lastTime = performance.now();

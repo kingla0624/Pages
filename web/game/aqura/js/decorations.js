@@ -1,4 +1,4 @@
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js";
+import * as THREE from "three";
 
 /**
  * Aqura Aquarium Aquascaping & Dynamic Decorations
@@ -7,7 +7,8 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.m
 
 export class DecorationManager {
   constructor(scene, tankBounds, audioManager) {
-    this.scene = scene;
+    this.world = scene;
+    this.scene = scene.scene || scene;
     this.bounds = tankBounds;
     this.audio = audioManager;
     this.rootGroup = new THREE.Group();
@@ -93,11 +94,14 @@ export class DecorationManager {
       if (dec.rotY !== undefined) obj.rotation.y = dec.rotY;
       if (dec.scale !== undefined) obj.scale.setScalar(dec.scale);
 
-      // Enable realistic shadow casting and receiving for all decoration meshes
+      // Enable realistic shadow casting and receiving and dynamic sunlight caustics for all decoration meshes
       obj.traverse(child => {
         if (child.isMesh && child.material !== this.sharedShadowMat) {
           child.castShadow = true;
           child.receiveShadow = true;
+          if (this.world?.injectCaustics && child.material) {
+            this.world.injectCaustics(child.material, 0.35);
+          }
         }
       });
 
@@ -1005,12 +1009,13 @@ export class DecorationManager {
             const heightRatio = Math.max(0, Math.min(1, y / b.height));
             const factor = heightRatio * heightRatio;
 
-            // Fluid drag travelling wave propagating from root upward
+            // Fluid drag travelling wave propagating from root upward with harmonic micro-ripples
             const sway = Math.sin(time * b.speed + b.phase - heightRatio * 2.8) * 0.32 * factor;
             const twist = Math.cos(time * b.speed * 0.75 + b.phase - heightRatio * 2.0) * 0.16 * factor;
+            const micro = Math.sin(time * b.speed * 2.2 + b.phase * 1.5 - heightRatio * 4.5) * 0.06 * factor;
 
-            pos.setX(i, orig[i * 3] + sway);
-            pos.setZ(i, orig[i * 3 + 2] + twist);
+            pos.setX(i, orig[i * 3] + sway + micro);
+            pos.setZ(i, orig[i * 3 + 2] + twist + micro * 0.5);
           }
           pos.needsUpdate = true;
         }

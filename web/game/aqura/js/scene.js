@@ -1,5 +1,69 @@
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js";
+import * as THREE from "three";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { LIGHTING_THEMES } from "./state.js";
+
+const UnderwaterLensShader = {
+  name: "UnderwaterLensShader",
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uResolution: { value: new THREE.Vector2(1, 1) },
+    uDistortion: { value: 0.0016 },
+    uVignette: { value: 0.35 },
+    uChromaticAberration: { value: 0.0022 },
+    uWaterTint: { value: new THREE.Vector3(0.96, 1.02, 1.06) }
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    uniform vec2 uResolution;
+    uniform float uDistortion;
+    uniform float uVignette;
+    uniform float uChromaticAberration;
+    uniform vec3 uWaterTint;
+    varying vec2 vUv;
+
+    void main() {
+      vec2 uv = vUv;
+
+      // 1. Living fluid micro-refraction waves
+      float wave1 = sin(uv.y * 16.0 + uTime * 1.5) * cos(uv.x * 14.0 + uTime * 1.1);
+      float wave2 = cos(uv.y * 24.0 - uTime * 1.3) * sin(uv.x * 20.0 + uTime * 0.9);
+      vec2 distOffset = vec2(wave1, wave2) * uDistortion;
+      vec2 distortedUv = clamp(uv + distOffset, 0.001, 0.999);
+
+      // 2. Optical chromatic dispersion towards screen edges
+      float distFromCenter = length(uv - 0.5);
+      float ca = uChromaticAberration * distFromCenter;
+      vec2 caDir = normalize(uv - 0.5 + 1e-5) * ca;
+
+      float r = texture2D(tDiffuse, clamp(distortedUv + caDir, 0.001, 0.999)).r;
+      float g = texture2D(tDiffuse, distortedUv).g;
+      float b = texture2D(tDiffuse, clamp(distortedUv - caDir, 0.001, 0.999)).b;
+      vec3 col = vec3(r, g, b);
+
+      // 3. Oceanic tint & color grading
+      col *= uWaterTint;
+
+      // 4. Smooth cinematic vignette
+      float vignette = clamp(1.0 - distFromCenter * distFromCenter * uVignette * 2.0, 0.0, 1.0);
+      col *= vignette;
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+};
 
 /**
  * Aqura 3D Aquarium World Engine
@@ -41,6 +105,7 @@ export class AquariumScene {
     this.initGodRays();
     this.initMarineSnow();
     this.initAlgaeOverlay();
+    this.initPostProcessing();
     this.bindEvents();
   }
 
@@ -58,6 +123,7 @@ export class AquariumScene {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -65,13 +131,40 @@ export class AquariumScene {
     this.raycaster = new THREE.Raycaster();
   }
 
+  initPostProcessing() {
+    this.composer = new EffectComposer(this.renderer);
+
+    this.renderPass = new RenderPass(this.scene, this.camera);
+    this.composer.addPass(this.renderPass);
+
+    // Subtle cinematic underwater bloom (soft light scatter on highlights & bioluminescence)
+    this.bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(this.width, this.height),
+      0.35, // strength
+      0.40, // radius
+      0.82  // threshold
+    );
+    this.composer.addPass(this.bloomPass);
+
+    // Underwater optical lens shader pass (micro-displacement, chromatic dispersion, vignette)
+    this.lensPass = new ShaderPass(UnderwaterLensShader);
+    this.lensPass.uniforms.uResolution.value.set(this.width, this.height);
+    this.composer.addPass(this.lensPass);
+
+    this.outputPass = new OutputPass();
+    this.composer.addPass(this.outputPass);
+  }
+
   initLighting() {
-    // Balanced oceanic ambient skylight (true deep-ocean blue skylight)
-    this.ambientLight = new THREE.AmbientLight(0x0284c7, 0.55);
+    // Balanced oceanic ambient with warm coral sand floor bounce
+    this.hemiLight = new THREE.HemisphereLight(0x40b4f8, 0xd4b886, 0.75);
+    this.scene.add(this.hemiLight);
+
+    this.ambientLight = new THREE.AmbientLight(0x38bdf8, 0.35);
     this.scene.add(this.ambientLight);
 
     // Warm piercing tropical sunlight from above casting realistic soft underwater shadows
-    this.sunLight = new THREE.DirectionalLight(0xfff8ee, 1.45);
+    this.sunLight = new THREE.DirectionalLight(0xfffaf0, 1.55);
     this.sunLight.position.set(4.5, 12.0, 3.5);
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.width = 2048;
@@ -90,12 +183,12 @@ export class AquariumScene {
     this.scene.add(this.sunLight);
 
     // Soft neutral oceanic daylight fill
-    this.fillLight = new THREE.PointLight(0x38bdf8, 0.40, 35);
+    this.fillLight = new THREE.PointLight(0x38bdf8, 0.45, 35);
     this.fillLight.position.set(0, 1.2, 3.5);
     this.scene.add(this.fillLight);
 
-    // Seafloor sand reflection bounce light (soft deep marine blue bounce)
-    this.bounceLight = new THREE.DirectionalLight(0x0284c7, 0.22);
+    // Seafloor sand reflection bounce light (warm coral sand bounce)
+    this.bounceLight = new THREE.DirectionalLight(0xd4b58e, 0.30);
     this.bounceLight.position.set(0, -4.5, 1.0);
     this.scene.add(this.bounceLight);
   }
@@ -132,6 +225,7 @@ export class AquariumScene {
       sCtx.fillRect(gx, gy, 1.5, 1.5);
     }
     const sandTex = new THREE.CanvasTexture(sandCanvas);
+    sandTex.colorSpace = THREE.SRGBColorSpace;
     sandTex.wrapS = THREE.RepeatWrapping;
     sandTex.wrapT = THREE.RepeatWrapping;
     sandTex.repeat.set(18, 14);
@@ -274,6 +368,62 @@ export class AquariumScene {
     this.causticsTexture.needsUpdate = true;
   }
 
+  injectCaustics(material, intensity = 0.35) {
+    if (!material || material.userData?.hasCaustics) return;
+    material.userData = material.userData || {};
+    material.userData.hasCaustics = true;
+
+    const previousOnBeforeCompile = material.onBeforeCompile;
+    material.onBeforeCompile = (shader, renderer) => {
+      if (previousOnBeforeCompile) {
+        previousOnBeforeCompile(shader, renderer);
+      }
+
+      shader.uniforms.uCausticsMap = { value: this.causticsTexture };
+      shader.uniforms.uCausticsIntensity = { value: intensity };
+
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <common>",
+        `#include <common>
+        varying vec3 vWorldPosCaustics;
+        varying vec3 vWorldNormalCaustics;`
+      );
+
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <worldpos_vertex>",
+        `#include <worldpos_vertex>
+        vec4 causticsWorldPos = vec4( transformed, 1.0 );
+        #ifdef USE_INSTANCING
+        causticsWorldPos = instanceMatrix * causticsWorldPos;
+        #endif
+        causticsWorldPos = modelMatrix * causticsWorldPos;
+        vWorldPosCaustics = causticsWorldPos.xyz;
+        vWorldNormalCaustics = normalize((modelMatrix * vec4(normal, 0.0)).xyz);`
+      );
+
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <common>",
+        `#include <common>
+        uniform sampler2D uCausticsMap;
+        uniform float uCausticsIntensity;
+        varying vec3 vWorldPosCaustics;
+        varying vec3 vWorldNormalCaustics;`
+      );
+
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <dithering_fragment>",
+        `#include <dithering_fragment>
+        {
+          float upNorm = clamp(vWorldNormalCaustics.y * 0.70 + 0.30, 0.0, 1.0);
+          float depthAtten = clamp((vWorldPosCaustics.y + 3.0) / 9.0, 0.30, 1.0);
+          vec3 causticsSample = texture2D(uCausticsMap, vWorldPosCaustics.xz * 0.14).rgb;
+          gl_FragColor.rgb += causticsSample * (uCausticsIntensity * upNorm * depthAtten);
+        }`
+      );
+    };
+    material.needsUpdate = true;
+  }
+
   initBubbleSystem() {
     this.bubbles = [];
     this.bubblePool = [];
@@ -349,6 +499,7 @@ export class AquariumScene {
     this.backCanvas.height = 512;
     this.backCtx = this.backCanvas.getContext("2d");
     this.backTexture = new THREE.CanvasTexture(this.backCanvas);
+    this.backTexture.colorSpace = THREE.SRGBColorSpace;
 
     this.backDropMat = new THREE.MeshBasicMaterial({
       map: this.backTexture,
@@ -593,12 +744,40 @@ export class AquariumScene {
     this.ambientLight.color.setHex(theme.ambientColor);
     this.ambientLight.intensity = theme.ambientIntensity;
 
+    if (this.hemiLight) {
+      if (themeId === "deepsea") {
+        this.hemiLight.color.setHex(0x0284c7);
+        this.hemiLight.groundColor.setHex(0x02244a);
+      } else if (themeId === "sunset") {
+        this.hemiLight.color.setHex(0xfba574);
+        this.hemiLight.groundColor.setHex(0x7c2d12);
+      } else if (themeId === "neon") {
+        this.hemiLight.color.setHex(0xa855f7);
+        this.hemiLight.groundColor.setHex(0x3b0764);
+      } else {
+        this.hemiLight.color.setHex(0x40b4f8);
+        this.hemiLight.groundColor.setHex(0xd4b886);
+      }
+    }
+
     this.sunLight.color.setHex(theme.sunColor);
     this.sunLight.intensity = theme.sunIntensity;
 
     this.sandMaterial.emissiveIntensity = theme.causticsIntensity;
 
     this.updateBackdropGradient(stops);
+
+    if (this.lensPass && this.lensPass.uniforms.uWaterTint) {
+      if (themeId === "deepsea") {
+        this.lensPass.uniforms.uWaterTint.value.set(0.85, 0.95, 1.15);
+      } else if (themeId === "sunset") {
+        this.lensPass.uniforms.uWaterTint.value.set(1.12, 0.98, 0.90);
+      } else if (themeId === "neon") {
+        this.lensPass.uniforms.uWaterTint.value.set(1.05, 0.90, 1.18);
+      } else {
+        this.lensPass.uniforms.uWaterTint.value.set(0.96, 1.02, 1.06);
+      }
+    }
   }
 
   bindEvents() {
@@ -659,6 +838,15 @@ export class AquariumScene {
     this.camera.fov = aspect < 1.0 ? 58 : 46;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(this.width, this.height);
+    if (this.composer) {
+      this.composer.setSize(this.width, this.height);
+      if (this.bloomPass) {
+        this.bloomPass.resolution.set(this.width, this.height);
+      }
+      if (this.lensPass) {
+        this.lensPass.uniforms.uResolution.value.set(this.width, this.height);
+      }
+    }
   }
 
   setFollowTarget(targetMesh, targetFish = null) {
@@ -738,7 +926,15 @@ export class AquariumScene {
       });
     }
 
-    // 4. Render Scene
-    this.renderer.render(this.scene, this.camera);
+    if (this.lensPass) {
+      this.lensPass.uniforms.uTime.value = time;
+    }
+
+    // 4. Render Scene with cinematic post-processing pipeline
+    if (this.composer) {
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 }
