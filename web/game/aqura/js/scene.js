@@ -43,10 +43,14 @@ const UnderwaterLensShader = {
       vec2 distOffset = vec2(wave1, wave2) * uDistortion;
       vec2 distortedUv = clamp(uv + distOffset, 0.001, 0.999);
 
-      // 2. Optical chromatic dispersion towards screen edges
-      float distFromCenter = length(uv - 0.5);
-      float ca = uChromaticAberration * distFromCenter;
-      vec2 caDir = normalize(uv - 0.5 + 1e-5) * ca;
+      // 2. Optical chromatic dispersion towards screen edges (aspect-ratio corrected)
+      float aspect = uResolution.x / max(uResolution.y, 1.0);
+      vec2 centered = (uv - 0.5) * vec2(aspect, 1.0);
+      float maxCornerDist = length(vec2(aspect, 1.0) * 0.5);
+      float normDist = length(centered) / maxCornerDist;
+
+      float ca = uChromaticAberration * normDist;
+      vec2 caDir = normalize((uv - 0.5) + 1e-5) * ca;
 
       float r = texture2D(tDiffuse, clamp(distortedUv + caDir, 0.001, 0.999)).r;
       float g = texture2D(tDiffuse, distortedUv).g;
@@ -56,14 +60,22 @@ const UnderwaterLensShader = {
       // 3. Oceanic tint & color grading
       col *= uWaterTint;
 
-      // 4. Smooth cinematic vignette
-      float vignette = clamp(1.0 - distFromCenter * distFromCenter * uVignette * 2.0, 0.0, 1.0);
+      // 4. Smooth cinematic vignette (circular, isotropic)
+      float vignette = clamp(1.0 - normDist * normDist * uVignette * 1.6, 0.0, 1.0);
       col *= vignette;
 
       gl_FragColor = vec4(col, 1.0);
     }
   `
 };
+
+// Reusable scratch objects to eliminate per-frame allocations in render loops
+const _vLookTarget = new THREE.Vector3();
+const _vChaseCamPos = new THREE.Vector3();
+const _rayPointer = new THREE.Vector2();
+const _rayPlaneNormal = new THREE.Vector3(0, 1, 0);
+const _rayPlane = new THREE.Plane(_rayPlaneNormal, 0);
+const _rayHitPoint = new THREE.Vector3();
 
 /**
  * Aqura 3D Aquarium World Engine
@@ -105,6 +117,7 @@ export class AquariumScene {
     this.initGodRays();
     this.initMarineSnow();
     this.initAlgaeOverlay();
+    this.initSedimentDustSystem();
     this.initPostProcessing();
     this.bindEvents();
   }
@@ -133,6 +146,7 @@ export class AquariumScene {
 
   initPostProcessing() {
     this.composer = new EffectComposer(this.renderer);
+    this.composer.setPixelRatio(this.renderer.getPixelRatio());
 
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(this.renderPass);
@@ -297,7 +311,51 @@ export class AquariumScene {
   }
 
   initWaterSurface() {
-    // Open ocean has no ceiling plane; infinite volumetric depth is created by the 360° sky dome & deep fog
+    // 3D Undulating Ocean Ceiling Surface (Snell's Window & Internal Refraction)
+    const width = 120.0;
+    const depth = 90.0;
+    const segX = 48;
+    const segZ = 36;
+    const surfaceGeom = new THREE.PlaneGeometry(width, depth, segX, segZ);
+    surfaceGeom.rotateX(Math.PI / 2); // Facing downward into water
+
+    this.waterSurfaceBasePositions = surfaceGeom.attributes.position.array.slice();
+
+    this.waterSurfaceMat = new THREE.MeshPhysicalMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.35,
+      roughness: 0.08,
+      metalness: 0.15,
+      transmission: 0.82,
+      ior: 1.333,
+      transparent: true,
+      opacity: 0.75,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+
+    this.waterSurfaceMesh = new THREE.Mesh(surfaceGeom, this.waterSurfaceMat);
+    this.waterSurfaceMesh.position.set(0, this.bounds.maxY - 0.05, -15.0);
+    this.scene.add(this.waterSurfaceMesh);
+  }
+
+  updateWaterSurface(time) {
+    if (!this.waterSurfaceMesh || !this.waterSurfaceBasePositions) return;
+    const pos = this.waterSurfaceMesh.geometry.attributes.position;
+    const base = this.waterSurfaceBasePositions;
+    const count = pos.count;
+
+    for (let i = 0; i < count; i++) {
+      const bx = base[i * 3];
+      const bz = base[i * 3 + 2];
+      // Multi-frequency ocean swells travelling across the surface
+      const swell1 = Math.sin(bx * 0.16 + time * 1.4) * 0.12;
+      const swell2 = Math.cos(bz * 0.20 + time * 1.1) * 0.08;
+      const chop = Math.sin((bx * 0.8 + bz * 0.6) - time * 2.1) * 0.038;
+      pos.setY(i, base[i * 3 + 1] + swell1 + swell2 + chop);
+    }
+    pos.needsUpdate = true;
   }
 
   initCaustics() {
@@ -313,6 +371,7 @@ export class AquariumScene {
     this.causticsTexture.repeat.set(8, 6);
 
     this.causticsImageData = this.causticsCtx.createImageData(256, 256);
+    this.causticsUniforms = [];
 
     // Apply directly to sand material with natural underwater irradiance
     this.sandMaterial.emissiveMap = this.causticsTexture;
@@ -379,8 +438,12 @@ export class AquariumScene {
         previousOnBeforeCompile(shader, renderer);
       }
 
+      const intensityUniform = { value: intensity };
+      if (!this.causticsUniforms) this.causticsUniforms = [];
+      this.causticsUniforms.push({ uniform: intensityUniform, baseIntensity: intensity });
+
       shader.uniforms.uCausticsMap = { value: this.causticsTexture };
-      shader.uniforms.uCausticsIntensity = { value: intensity };
+      shader.uniforms.uCausticsIntensity = intensityUniform;
 
       shader.vertexShader = shader.vertexShader.replace(
         "#include <common>",
@@ -397,8 +460,10 @@ export class AquariumScene {
         causticsWorldPos = instanceMatrix * causticsWorldPos;
         #endif
         causticsWorldPos = modelMatrix * causticsWorldPos;
-        vWorldPosCaustics = causticsWorldPos.xyz;
-        vWorldNormalCaustics = normalize((modelMatrix * vec4(normal, 0.0)).xyz);`
+        vec3 wNorm = (modelMatrix * vec4(normal, 0.0)).xyz;
+        float normLen = length(wNorm);
+        vWorldNormalCaustics = normLen > 0.001 ? wNorm / normLen : vec3(0.0, 1.0, 0.0);
+        vWorldPosCaustics = causticsWorldPos.xyz;`
       );
 
       shader.fragmentShader = shader.fragmentShader.replace(
@@ -711,6 +776,105 @@ export class AquariumScene {
     // Water turbidity is handled via delicate optical fog density modulation.
   }
 
+  initSedimentDustSystem() {
+    this.dustPuffs = [];
+    this.dustPool = [];
+
+    // Billowy soft sediment cloud canvas texture
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0.0, "rgba(225, 205, 165, 0.95)");
+    grad.addColorStop(0.35, "rgba(200, 180, 140, 0.65)");
+    grad.addColorStop(0.70, "rgba(165, 145, 110, 0.22)");
+    grad.addColorStop(1.0, "rgba(120, 100, 75, 0.0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+
+    const dustTex = new THREE.CanvasTexture(canvas);
+    this.dustMat = new THREE.SpriteMaterial({
+      map: dustTex,
+      transparent: true,
+      opacity: 0.35,
+      blending: THREE.NormalBlending,
+      depthWrite: false
+    });
+  }
+
+  triggerSedimentDust(x, z, intensity = 1.0, count = 2) {
+    if (!this.dustPuffs) return;
+    const baseY = this.bounds.minY + 0.06;
+    for (let i = 0; i < count; i++) {
+      let sprite;
+      if (this.dustPool.length > 0) {
+        sprite = this.dustPool.pop();
+        sprite.visible = true;
+      } else if (this.dustPuffs.length < 50) {
+        sprite = new THREE.Sprite(this.dustMat.clone());
+        this.scene.add(sprite);
+      } else {
+        break;
+      }
+
+      const spread = 0.35 * intensity;
+      const px = x + (Math.random() - 0.5) * spread;
+      const pz = z + (Math.random() - 0.5) * spread;
+      const initialScale = 0.28 * intensity * (0.8 + Math.random() * 0.4);
+      sprite.scale.set(initialScale, initialScale, 1);
+      sprite.position.set(px, baseY, pz);
+      sprite.material.opacity = (0.24 + Math.random() * 0.12) * Math.min(1.0, intensity);
+
+      this.dustPuffs.push({
+        sprite,
+        x: px,
+        y: baseY,
+        z: pz,
+        vx: (Math.random() - 0.5) * 0.10 + 0.03, // ambient drift
+        vy: 0.07 + Math.random() * 0.09 * intensity, // billowing upward
+        vz: (Math.random() - 0.5) * 0.10,
+        scale: initialScale,
+        growthRate: 0.42 * intensity,
+        age: 0,
+        maxAge: 2.2 + Math.random() * 1.2
+      });
+    }
+  }
+
+  updateSedimentDust(delta) {
+    if (!this.dustPuffs) return;
+    for (let i = this.dustPuffs.length - 1; i >= 0; i--) {
+      const p = this.dustPuffs[i];
+      p.age += delta;
+      if (p.age >= p.maxAge) {
+        p.sprite.visible = false;
+        this.dustPool.push(p.sprite);
+        this.dustPuffs.splice(i, 1);
+        continue;
+      }
+
+      const progress = p.age / p.maxAge;
+      p.x += p.vx * delta;
+      p.y += p.vy * delta;
+      p.z += p.vz * delta;
+      p.vy *= 0.94; // kinetic deceleration in water
+      p.vx *= 0.98;
+      p.scale += p.growthRate * delta;
+
+      let alpha = 1.0;
+      if (progress < 0.15) {
+        alpha = progress / 0.15;
+      } else {
+        alpha = Math.pow(1.0 - progress, 1.4);
+      }
+
+      p.sprite.position.set(p.x, p.y, p.z);
+      p.sprite.scale.set(p.scale, p.scale, 1);
+      p.sprite.material.opacity = alpha * 0.32;
+    }
+  }
+
   setCleanliness(cleanliness) {
     // 100 = crystal clear oceanic visibility (fog density 0.016)
     // 0 = slightly plankton-rich turbid ocean water (fog density 0.024)
@@ -765,6 +929,13 @@ export class AquariumScene {
 
     this.sandMaterial.emissiveIntensity = theme.causticsIntensity;
 
+    if (this.causticsUniforms) {
+      const causticsScale = (theme.causticsIntensity || 0.75) / 0.75;
+      for (const item of this.causticsUniforms) {
+        item.uniform.value = item.baseIntensity * causticsScale;
+      }
+    }
+
     this.updateBackdropGradient(stops);
 
     if (this.lensPass && this.lensPass.uniforms.uWaterTint) {
@@ -776,6 +947,22 @@ export class AquariumScene {
         this.lensPass.uniforms.uWaterTint.value.set(1.05, 0.90, 1.18);
       } else {
         this.lensPass.uniforms.uWaterTint.value.set(0.96, 1.02, 1.06);
+      }
+    }
+
+    if (this.waterSurfaceMat) {
+      if (themeId === "deepsea") {
+        this.waterSurfaceMat.color.setHex(0x0284c7);
+        this.waterSurfaceMat.emissive.setHex(0x034674);
+      } else if (themeId === "sunset") {
+        this.waterSurfaceMat.color.setHex(0xfba574);
+        this.waterSurfaceMat.emissive.setHex(0x7c2d12);
+      } else if (themeId === "neon") {
+        this.waterSurfaceMat.color.setHex(0xa855f7);
+        this.waterSurfaceMat.emissive.setHex(0x4c1d95);
+      } else {
+        this.waterSurfaceMat.color.setHex(0x38bdf8);
+        this.waterSurfaceMat.emissive.setHex(0x0284c7);
       }
     }
   }
@@ -831,14 +1018,15 @@ export class AquariumScene {
   }
 
   onResize() {
-    this.width = this.container.clientWidth || window.innerWidth;
-    this.height = this.container.clientHeight || window.innerHeight;
+    this.width = Math.max(1, this.container.clientWidth || window.innerWidth);
+    this.height = Math.max(1, this.container.clientHeight || window.innerHeight);
     const aspect = this.width / this.height;
     this.camera.aspect = aspect;
     this.camera.fov = aspect < 1.0 ? 58 : 46;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(this.width, this.height);
     if (this.composer) {
+      this.composer.setPixelRatio(this.renderer.getPixelRatio());
       this.composer.setSize(this.width, this.height);
       if (this.bloomPass) {
         this.bloomPass.resolution.set(this.width, this.height);
@@ -859,13 +1047,13 @@ export class AquariumScene {
     const x = ((clientX - rect.left) / rect.width) * 2 - 1;
     const y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
-    this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.camera);
-    
+    _rayPointer.set(x, y);
+    this.raycaster.setFromCamera(_rayPointer, this.camera);
+
     // Intersect plane at targetY
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -targetY);
-    const targetPoint = new THREE.Vector3();
-    const hit = this.raycaster.ray.intersectPlane(plane, targetPoint);
-    return hit ? targetPoint : null;
+    _rayPlane.constant = -targetY;
+    const hit = this.raycaster.ray.intersectPlane(_rayPlane, _rayHitPoint);
+    return hit ? _rayHitPoint.clone() : null;
   }
 
   getRaycastObjects(clientX, clientY, objects) {
@@ -873,7 +1061,8 @@ export class AquariumScene {
     const x = ((clientX - rect.left) / rect.width) * 2 - 1;
     const y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
-    this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.camera);
+    _rayPointer.set(x, y);
+    this.raycaster.setFromCamera(_rayPointer, this.camera);
     return this.raycaster.intersectObjects(objects, true);
   }
 
@@ -883,21 +1072,30 @@ export class AquariumScene {
     this.cameraAngleX = THREE.MathUtils.lerp(this.cameraAngleX, this.targetCameraAngleX, delta * 5);
     this.cameraDistance = THREE.MathUtils.lerp(this.cameraDistance, this.targetCameraDistance, delta * 5);
 
-    let lookTarget = new THREE.Vector3(0, 0.2, 0);
+    _vLookTarget.set(0, 0.2, 0);
 
     if (this.followTarget) {
-      lookTarget = this.followTarget.position.clone();
-      const isManta = this.followTargetFish && this.followTargetFish.isMantaRay;
-      const followDist = isManta ? 10.5 : 2.5;
-      const followHeight = isManta ? 2.8 : 0.40;
+      if (!this.followTarget.parent) {
+        // Target mesh was removed from scene tree; auto-fallback to normal camera
+        this.followTarget = null;
+        this.followTargetFish = null;
+      } else {
+        _vLookTarget.copy(this.followTarget.position);
+        const isManta = this.followTargetFish && this.followTargetFish.isMantaRay;
+        const followDist = isManta ? 10.5 : 2.5;
+        const followHeight = isManta ? 2.8 : 0.40;
 
-      // Smooth chase camera that smoothly orbits near the target
-      const cx = lookTarget.x + Math.sin(this.cameraAngleY) * followDist;
-      const cy = lookTarget.y + followHeight + Math.sin(this.cameraAngleX) * (followDist * 0.45);
-      const cz = lookTarget.z + Math.cos(this.cameraAngleY) * followDist;
+        // Smooth chase camera that smoothly orbits near the target
+        const cx = _vLookTarget.x + Math.sin(this.cameraAngleY) * followDist;
+        const cy = _vLookTarget.y + followHeight + Math.sin(this.cameraAngleX) * (followDist * 0.45);
+        const cz = _vLookTarget.z + Math.cos(this.cameraAngleY) * followDist;
 
-      this.camera.position.lerp(new THREE.Vector3(cx, cy, cz), delta * 4.5);
-    } else {
+        _vChaseCamPos.set(cx, cy, cz);
+        this.camera.position.lerp(_vChaseCamPos, delta * 4.5);
+      }
+    }
+
+    if (!this.followTarget) {
       const cx = Math.sin(this.cameraAngleY) * Math.cos(this.cameraAngleX) * this.cameraDistance;
       const cy = Math.sin(this.cameraAngleX) * this.cameraDistance + 0.4;
       const cz = Math.cos(this.cameraAngleY) * Math.cos(this.cameraAngleX) * this.cameraDistance;
@@ -908,17 +1106,20 @@ export class AquariumScene {
       const driftZ = Math.cos(time * 0.28) * 0.18;
 
       this.camera.position.set(cx + driftX, cy + driftY, cz + driftZ);
-      lookTarget.add(new THREE.Vector3(driftX * 0.25, driftY * 0.25, 0));
+      _vLookTarget.x += driftX * 0.25;
+      _vLookTarget.y += driftY * 0.25;
     }
 
-    this.camera.lookAt(lookTarget);
+    this.camera.lookAt(_vLookTarget);
 
-    // 2. Procedural Caustics animation
+    // 2. Procedural Caustics animation & 3D ocean swells
     this.updateCaustics(time);
+    this.updateWaterSurface(time);
 
-    // 3. Bubbles, marine snow & subtle god ray wave modulation
+    // 3. Bubbles, marine snow, sediment dust & subtle god ray wave modulation
     this.updateBubbles(delta, time);
     this.updateMarineSnow(delta, time);
+    this.updateSedimentDust(delta);
     if (this.godRayMeshes) {
       this.godRayMeshes.forEach((ray) => {
         ray.mat.opacity = ray.baseOpacity * (0.85 + 0.15 * Math.sin(time * 0.8 + ray.phase));

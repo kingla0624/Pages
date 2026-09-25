@@ -23,8 +23,16 @@ const server = http.createServer((req, res) => {
   }
 
   let filePath = safePath;
-  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+  if (!fs.existsSync(filePath)) {
+    if (path.extname(reqPath)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Not Found');
+      return;
+    }
     filePath = path.join(__dirname, 'index.html');
+  } else if (fs.statSync(filePath).isDirectory()) {
+    const dirIndex = path.join(filePath, 'index.html');
+    filePath = fs.existsSync(dirIndex) ? dirIndex : path.join(__dirname, 'index.html');
   }
 
   const ext = path.extname(filePath);

@@ -28,23 +28,31 @@ export class DecorationManager {
     this.bubbleEmitters = [];
   }
 
+  isSharedTexture(tex) {
+    if (!tex) return false;
+    if (tex === this.sharedLeafTex) return true;
+    if (tex === this.sharedRockTex) return true;
+    if (this.sharedShadowMat && tex === this.sharedShadowMat.map) return true;
+    return false;
+  }
+
   disposeObject(obj) {
+    const disposedMats = new Set();
     obj.traverse(child => {
       if (child.isMesh) {
         child.geometry?.dispose();
         if (child.material) {
+          const disposeMat = (m) => {
+            if (!m || disposedMats.has(m) || m === this.sharedShadowMat) return;
+            disposedMats.add(m);
+            if (m.map && !this.isSharedTexture(m.map)) m.map.dispose();
+            if (m.bumpMap && !this.isSharedTexture(m.bumpMap)) m.bumpMap.dispose();
+            m.dispose();
+          };
           if (Array.isArray(child.material)) {
-            child.material.forEach(m => {
-              if (m !== this.sharedShadowMat) {
-                m.map?.dispose();
-                m.bumpMap?.dispose();
-                m.dispose();
-              }
-            });
-          } else if (child.material !== this.sharedShadowMat) {
-            child.material.map?.dispose();
-            child.material.bumpMap?.dispose();
-            child.material.dispose();
+            child.material.forEach(disposeMat);
+          } else {
+            disposeMat(child.material);
           }
         }
       }

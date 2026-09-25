@@ -149,6 +149,12 @@ export class AudioManager {
     filter.connect(gain);
     gain.connect(this.ambientGain);
 
+    osc.onended = () => {
+      osc.disconnect();
+      filter.disconnect();
+      gain.disconnect();
+    };
+
     osc.start(now);
     osc.stop(now + 6.0);
   }
@@ -172,6 +178,11 @@ export class AudioManager {
     osc.connect(gain);
     gain.connect(this.masterGain);
 
+    osc.onended = () => {
+      osc.disconnect();
+      gain.disconnect();
+    };
+
     osc.start(now);
     osc.stop(now + 0.09);
   }
@@ -194,6 +205,11 @@ export class AudioManager {
 
     osc.connect(gain);
     gain.connect(this.masterGain);
+
+    osc.onended = () => {
+      osc.disconnect();
+      gain.disconnect();
+    };
 
     osc.start(now);
     osc.stop(now + 0.13);
@@ -224,6 +240,11 @@ export class AudioManager {
     osc.connect(gain);
     gain.connect(this.masterGain);
 
+    osc.onended = () => {
+      osc.disconnect();
+      gain.disconnect();
+    };
+
     osc.start(now);
     osc.stop(now + 0.16);
   }
@@ -245,6 +266,12 @@ export class AudioManager {
 
     subOsc.connect(subGain);
     subGain.connect(this.masterGain);
+
+    subOsc.onended = () => {
+      subOsc.disconnect();
+      subGain.disconnect();
+    };
+
     subOsc.start(now);
     subOsc.stop(now + 0.33);
 
@@ -260,6 +287,12 @@ export class AudioManager {
 
     resOsc.connect(resGain);
     resGain.connect(this.masterGain);
+
+    resOsc.onended = () => {
+      resOsc.disconnect();
+      resGain.disconnect();
+    };
+
     resOsc.start(now);
     resOsc.stop(now + 0.23);
   }
@@ -288,6 +321,11 @@ export class AudioManager {
 
     osc.connect(gain);
     gain.connect(this.masterGain);
+
+    osc.onended = () => {
+      osc.disconnect();
+      gain.disconnect();
+    };
 
     osc.start(now);
     osc.stop(now + 0.29);
@@ -320,6 +358,11 @@ export class AudioManager {
 
       osc.connect(gain);
       gain.connect(this.masterGain);
+
+      osc.onended = () => {
+        osc.disconnect();
+        gain.disconnect();
+      };
 
       osc.start(noteTime);
       osc.stop(noteTime + 0.26);

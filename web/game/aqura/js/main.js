@@ -40,6 +40,7 @@ class AquraGame {
       if (document.hidden) {
         this.isTabActive = false;
         this.audio.suspend();
+        this.state.save();
       } else {
         this.isTabActive = true;
         this.audio.resume();
@@ -53,9 +54,11 @@ class AquraGame {
         if (event.skipped) {
           this.isRunning = false;
         } else {
-          this.isRunning = true;
-          this.lastTime = performance.now();
-          this.startLoop();
+          if (!this.isRunning) {
+            this.isRunning = true;
+            this.lastTime = performance.now();
+            this.startLoop();
+          }
         }
       });
     }
@@ -69,12 +72,23 @@ class AquraGame {
     }, 400);
 
     // 4. State auto-save and regular cleanliness & hunger tick
+    let saveCooldown = 15;
     setInterval(() => {
       if (!this.isRunning || !this.isTabActive) return;
       this.state.tick(1.0);
       this.scene.setCleanliness(this.state.data.cleanliness);
       this.ui.updateStatsDisplay();
+
+      saveCooldown -= 1.0;
+      if (saveCooldown <= 0) {
+        saveCooldown = 15;
+        this.state.save();
+      }
     }, 1000);
+
+    window.addEventListener("beforeunload", () => {
+      this.state.save();
+    });
   }
 
   initAudioUnlock() {

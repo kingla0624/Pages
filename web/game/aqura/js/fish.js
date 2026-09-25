@@ -1,6 +1,13 @@
 import * as THREE from "three";
 import { FISH_CATALOG } from "./state.js";
 
+// Reusable scratch vectors to eliminate per-frame allocations in boids/steering loops
+const _vDesired = new THREE.Vector3();
+const _vSteer = new THREE.Vector3();
+const _vSepForce = new THREE.Vector3();
+const _vDiff = new THREE.Vector3();
+const _vLookTarget = new THREE.Vector3();
+
 /**
  * Aqura Fish AI & Procedural 3D Creature Engine
  * Features species-specific procedural meshes, undulating spine swimming bones,
@@ -187,6 +194,9 @@ export class FishManager {
       const f = this.fishList[i];
       if (f.isAmbient) continue; // Always preserve ambient ocean wildlife
       if (!stateIds.has(f.id)) {
+        if (this.selectedFish === f) {
+          this.selectedFish = null;
+        }
         this.rootGroup.remove(f.group);
         this.disposeFishMesh(f.group);
         this.fishList.splice(i, 1);
@@ -202,20 +212,34 @@ export class FishManager {
   }
 
   disposeFishMesh(group) {
+    if (!group) return;
+    const isSharedTexture = (tex) => {
+      if (!tex) return false;
+      if (tex === this.oralArmTexture) return true;
+      if (this.irisTextures) {
+        for (const k in this.irisTextures) {
+          if (this.irisTextures[k] === tex) return true;
+        }
+      }
+      return false;
+    };
+
+    const disposedMats = new Set();
     group.traverse(child => {
       if (child.isMesh) {
         child.geometry?.dispose();
         if (child.material) {
+          const disposeMat = (m) => {
+            if (!m || disposedMats.has(m)) return;
+            disposedMats.add(m);
+            if (m.map && !isSharedTexture(m.map)) m.map.dispose();
+            if (m.bumpMap && !isSharedTexture(m.bumpMap)) m.bumpMap.dispose();
+            m.dispose();
+          };
           if (Array.isArray(child.material)) {
-            child.material.forEach(m => {
-              m.map?.dispose();
-              m.bumpMap?.dispose();
-              m.dispose();
-            });
+            child.material.forEach(disposeMat);
           } else {
-            child.material.map?.dispose();
-            child.material.bumpMap?.dispose();
-            child.material.dispose();
+            disposeMat(child.material);
           }
         }
       }
@@ -278,26 +302,129 @@ export class FishManager {
     return fishInstance;
   }
 
-  applyIridescentSheen(mat, sheenHex = 0x38bdf8) {
+  createBiologicalIrisTexture(type) {
+    this.irisTextures = this.irisTextures || {};
+    if (this.irisTextures[type]) return this.irisTextures[type];
+
+    const size = 128;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    const half = size / 2;
+
+    let baseColor = "#d97706";
+    let highlightColor = "#fde68a";
+    let midColor = "#b45309";
+    if (type === "blue_tang") {
+      baseColor = "#0369a1";
+      highlightColor = "#7dd3fc";
+      midColor = "#0284c7";
+    } else if (type === "angelfish") {
+      baseColor = "#475569";
+      highlightColor = "#f1f5f9";
+      midColor = "#94a3b8";
+    } else if (type === "betta") {
+      baseColor = "#6d28d9";
+      highlightColor = "#e879f9";
+      midColor = "#a21caf";
+    } else if (type === "koi") {
+      baseColor = "#c2410c";
+      highlightColor = "#fed7aa";
+      midColor = "#f59e0b";
+    }
+
+    // 1. Base iris background with species gradient
+    const bgGrad = ctx.createRadialGradient(half, half, 8, half, half, half);
+    bgGrad.addColorStop(0.0, highlightColor);
+    bgGrad.addColorStop(0.65, midColor);
+    bgGrad.addColorStop(0.90, baseColor);
+    bgGrad.addColorStop(1.0, "#080b10"); // Outer dark limbal ring
+    ctx.fillStyle = bgGrad;
+    ctx.beginPath();
+    ctx.arc(half, half, half, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2. Radiating metallic guanine fibers (Iridophores)
+    ctx.lineWidth = 1.0;
+    for (let i = 0; i < 64; i++) {
+      const angle = (i / 64) * Math.PI * 2;
+      const rInner = 16 + Math.random() * 4;
+      const rOuter = half - 3 - Math.random() * 8;
+      ctx.strokeStyle = i % 2 === 0 ? "rgba(255, 255, 255, 0.35)" : "rgba(10, 15, 25, 0.40)";
+      ctx.beginPath();
+      ctx.moveTo(half + Math.cos(angle) * rInner, half + Math.sin(angle) * rInner);
+      ctx.lineTo(half + Math.cos(angle) * rOuter, half + Math.sin(angle) * rOuter);
+      ctx.stroke();
+    }
+
+    // 3. Deep black pupil with soft feathered natural boundary
+    const pupilGrad = ctx.createRadialGradient(half, half, 0, half, half, 22);
+    pupilGrad.addColorStop(0.0, "#000000");
+    pupilGrad.addColorStop(0.85, "#020408");
+    pupilGrad.addColorStop(1.0, "rgba(5, 8, 12, 0.95)");
+    ctx.fillStyle = pupilGrad;
+    ctx.beginPath();
+    ctx.arc(half, half, 22, 0, Math.PI * 2);
+    ctx.fill();
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this.irisTextures[type] = tex;
+    return tex;
+  }
+
+  applyMarineTissueShader(mat, type = "clownfish", sheenHex = 0x38bdf8) {
+    let sssHex = 0xff5722; // default clownfish warm orange
+    if (type === "blue_tang") sssHex = 0x0284c7;
+    else if (type === "angelfish") sssHex = 0xdbeafe;
+    else if (type === "betta") sssHex = 0xc026d3;
+    else if (type === "koi") sssHex = 0xf97316;
+
     const prev = mat.onBeforeCompile;
     mat.onBeforeCompile = (shader, renderer) => {
       if (prev) prev(shader, renderer);
       shader.uniforms.uSheenCol = { value: new THREE.Color(sheenHex) };
+      shader.uniforms.uSubsurfaceCol = { value: new THREE.Color(sssHex) };
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <common>",
         `#include <common>
-         uniform vec3 uSheenCol;`
+         uniform vec3 uSheenCol;
+         uniform vec3 uSubsurfaceCol;`
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <dithering_fragment>",
         `#include <dithering_fragment>
          vec3 vDir = normalize(vViewPosition);
-         float fres = 1.0 - max(dot(normal, vDir), 0.0);
-         float rimGlow = pow(fres, 2.8);
-         gl_FragColor.rgb += uSheenCol * rimGlow * 0.45;`
+         vec3 lDir = normalize(vec3(0.35, 0.85, 0.40));
+         float normLen = length(normal);
+         vec3 safeNormal = normLen > 0.001 ? normal / normLen : vec3(0.0, 0.0, 1.0);
+         
+         // 1. Biological Subsurface Scattering (Backlight penetration & flesh wrap)
+         float backLight = max(0.0, dot(-vDir, lDir));
+         float sssWrap = max(0.0, dot(safeNormal, lDir) * 0.45 + 0.55);
+         float sss = pow(backLight, 2.6) * 0.44 + sssWrap * 0.22;
+         
+         // 2. Micro-crystalline guanine scale multilayer iridescence (structural interference)
+         float fres = 1.0 - max(dot(safeNormal, vDir), 0.0);
+         vec3 thinFilmColor = 0.5 + 0.5 * cos(6.28318 * (vec3(0.18, 0.50, 0.85) * fres + vec3(0.0, 0.33, 0.67)));
+
+         // 3. Wet Mucus Glycoprotein Sheen (Longitudinal Anisotropic Reflection along fish spine)
+         vec3 spineAxis = vec3(1.0, 0.0, 0.0);
+         vec3 hDir = normalize(lDir + vDir);
+         float anisoDot = dot(cross(safeNormal, spineAxis), hDir);
+         float anisoSpec = pow(clamp(sqrt(max(0.0, 1.0 - anisoDot * anisoDot)), 0.0, 1.0), 28.0);
+         
+         gl_FragColor.rgb += uSubsurfaceCol * sss;
+         gl_FragColor.rgb += thinFilmColor * uSheenCol * pow(fres, 2.2) * 0.42;
+         gl_FragColor.rgb += vec3(0.92, 0.96, 1.0) * anisoSpec * 0.28 * (1.0 - fres * 0.35);`
       );
     };
     mat.needsUpdate = true;
+  }
+
+  applyIridescentSheen(mat, sheenHex = 0x38bdf8) {
+    this.applyMarineTissueShader(mat, "clownfish", sheenHex);
   }
 
   buildCreatureMesh(type, config) {
@@ -547,16 +674,283 @@ export class FishManager {
 
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
-    return new THREE.MeshStandardMaterial({
+    return new THREE.MeshPhysicalMaterial({
       map: tex,
       color: 0xffffff,
       transparent: true,
-      opacity: 0.90,
-      roughness: 0.18,
-      metalness: 0.05,
+      opacity: 0.92,
+      roughness: 0.16,
+      metalness: 0.03,
+      transmission: 0.62,
+      thickness: 0.08,
+      ior: 1.33,
       side: THREE.DoubleSide,
       depthWrite: false
     });
+  }
+
+  createDeformableDorsalFinGeom(type, scale) {
+    const cols = 14;
+    const rows = 4;
+    let xFront = 0.24 * scale;
+    let xBack = -0.36 * scale;
+    if (type === "angelfish") {
+      xFront = 0.14 * scale;
+      xBack = -0.38 * scale;
+    } else if (type === "blue_tang") {
+      xFront = 0.22 * scale;
+      xBack = -0.38 * scale;
+    } else if (type === "betta") {
+      xFront = 0.20 * scale;
+      xBack = -0.42 * scale;
+    }
+
+    const vertices = [];
+    const uvs = [];
+    const indices = [];
+    const vHeights = [];
+    const uChords = [];
+
+    for (let c = 0; c <= cols; c++) {
+      const u = c / cols; // 0 at front, 1 at back
+      const x = (1 - u) * xFront + u * xBack;
+
+      let yBase = (0.22 + Math.sin(u * Math.PI) * 0.06) * scale;
+      let yTip = (0.26 + Math.sin(u * Math.PI) * 0.18) * scale;
+
+      if (type === "clownfish") {
+        if (u < 0.45) {
+          yTip = (0.24 + Math.sin((u / 0.45) * Math.PI * 0.5) * 0.20) * scale;
+        } else if (u < 0.60) {
+          yTip = (0.33 - Math.sin(((u - 0.45) / 0.15) * Math.PI) * 0.05) * scale;
+        } else {
+          yTip = (0.36 - Math.pow((u - 0.60) / 0.40, 1.2) * 0.24) * scale;
+        }
+      } else if (type === "angelfish") {
+        yBase = (0.24 + (1 - u) * 0.06) * scale;
+        if (u < 0.35) {
+          yTip = (0.36 + Math.sin((u / 0.35) * Math.PI * 0.5) * 1.10) * scale;
+        } else {
+          yTip = (1.46 - Math.pow((u - 0.35) / 0.65, 0.8) * 1.25) * scale;
+        }
+      } else if (type === "blue_tang") {
+        yBase = (0.22 + Math.sin(u * Math.PI) * 0.06) * scale;
+        yTip = (0.26 + Math.sin(u * Math.PI * 0.85) * 0.19) * scale;
+      } else if (type === "betta") {
+        yTip = (0.25 + Math.sin(u * Math.PI * 0.75) * 0.35) * scale;
+      }
+
+      for (let r = 0; r <= rows; r++) {
+        const v = r / rows; // 0 at base (spine), 1 at tip
+        const py = yBase + v * (yTip - yBase);
+        vertices.push(x, py, 0);
+        uvs.push(1 - u, v);
+        vHeights.push(v);
+        uChords.push(u);
+      }
+    }
+
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        const i0 = c * (rows + 1) + r;
+        const i1 = (c + 1) * (rows + 1) + r;
+        const i2 = (c + 1) * (rows + 1) + (r + 1);
+        const i3 = c * (rows + 1) + (r + 1);
+        indices.push(i0, i1, i2);
+        indices.push(i0, i2, i3);
+      }
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+    geom.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+
+    // Normal sanitizer to guarantee no zero or NaN normals
+    const dNormAttr = geom.attributes.normal;
+    if (dNormAttr) {
+      const dArr = dNormAttr.array;
+      for (let i = 0; i < dArr.length; i += 3) {
+        const nx = dArr[i], ny = dArr[i + 1], nz = dArr[i + 2];
+        const lenSq = nx * nx + ny * ny + nz * nz;
+        if (lenSq < 1e-5 || !isFinite(lenSq)) {
+          dArr[i] = 0;
+          dArr[i + 1] = 0;
+          dArr[i + 2] = 1;
+        }
+      }
+    }
+
+    geom.userData = {
+      basePositions: new Float32Array(vertices),
+      vHeights,
+      uChords
+    };
+    return geom;
+  }
+
+  createDeformableAnalFinGeom(type, scale) {
+    const cols = 12;
+    const rows = 4;
+    let xFront = -0.05 * scale;
+    let xBack = -0.36 * scale;
+    if (type === "angelfish") {
+      xFront = 0.05 * scale;
+      xBack = -0.42 * scale;
+    }
+
+    const vertices = [];
+    const uvs = [];
+    const indices = [];
+    const vHeights = [];
+    const uChords = [];
+
+    for (let c = 0; c <= cols; c++) {
+      const u = c / cols;
+      const x = (1 - u) * xFront + u * xBack;
+
+      let yBase = (-0.18 + (1 - u) * 0.04) * scale;
+      let yTip = (-0.22 - Math.sin(u * Math.PI) * 0.14) * scale;
+
+      if (type === "angelfish") {
+        yBase = (-0.26 - (1 - u) * 0.06) * scale;
+        if (u < 0.35) {
+          yTip = (-0.42 - Math.sin((u / 0.35) * Math.PI * 0.5) * 0.95) * scale;
+        } else {
+          yTip = (-1.37 + Math.pow((u - 0.35) / 0.65, 0.9) * 1.15) * scale;
+        }
+      } else if (type === "betta") {
+        yTip = (-0.22 - Math.sin(u * Math.PI * 0.8) * 0.38) * scale;
+      }
+
+      for (let r = 0; r <= rows; r++) {
+        const v = r / rows; // 0 at base, 1 at tip
+        const py = yBase + v * (yTip - yBase);
+        vertices.push(x, py, 0);
+        uvs.push(1 - u, v);
+        vHeights.push(v);
+        uChords.push(u);
+      }
+    }
+
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        const i0 = c * (rows + 1) + r;
+        const i1 = (c + 1) * (rows + 1) + r;
+        const i2 = (c + 1) * (rows + 1) + (r + 1);
+        const i3 = c * (rows + 1) + (r + 1);
+        indices.push(i0, i1, i2);
+        indices.push(i0, i2, i3);
+      }
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+    geom.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+
+    // Normal sanitizer to guarantee no zero or NaN normals
+    const aNormAttr = geom.attributes.normal;
+    if (aNormAttr) {
+      const aArr = aNormAttr.array;
+      for (let i = 0; i < aArr.length; i += 3) {
+        const nx = aArr[i], ny = aArr[i + 1], nz = aArr[i + 2];
+        const lenSq = nx * nx + ny * ny + nz * nz;
+        if (lenSq < 1e-5 || !isFinite(lenSq)) {
+          aArr[i] = 0;
+          aArr[i + 1] = 0;
+          aArr[i + 2] = 1;
+        }
+      }
+    }
+
+    geom.userData = {
+      basePositions: new Float32Array(vertices),
+      vHeights,
+      uChords
+    };
+    return geom;
+  }
+
+  createDeformableCaudalFinGeom(type, scale, hTail) {
+    const cols = 12; // chordwise from peduncle to trailing tips
+    const rows = 8;  // spanwise from ventral tip to dorsal tip
+
+    const vertices = [];
+    const uvs = [];
+    const indices = [];
+    const uSpans = [];
+    const vHeights = [];
+
+    const tailLen = (type === "betta" ? 1.05 : (type === "angelfish" ? 0.46 : 0.38)) * scale;
+    const maxHalfHeight = (type === "betta" ? 0.58 : (type === "angelfish" ? 0.38 : 0.25)) * scale;
+
+    for (let c = 0; c <= cols; c++) {
+      const u = c / cols; // 0 at peduncle, 1 at trailing edge
+      const px = -u * tailLen;
+
+      // Span height expands from hTail at peduncle to full fin span at trailing edge
+      const currentHalfH = THREE.MathUtils.lerp(hTail, maxHalfHeight, Math.pow(u, 0.65));
+
+      for (let r = 0; r <= rows; r++) {
+        const v = r / rows; // 0 at bottom, 1 at top
+        const py = (v - 0.5) * 2.0 * currentHalfH;
+
+        // Tail notch indentation along trailing edge (for forked / crescent fins)
+        let notchX = 0;
+        if (u > 0.4 && (type === "blue_tang" || type === "angelfish" || type === "koi")) {
+          const uTrailing = (u - 0.4) / 0.6;
+          const centerDist = 1.0 - Math.abs((v - 0.5) * 2.0); // 1 at center, 0 at tips
+          notchX = centerDist * 0.12 * scale * uTrailing;
+        }
+
+        vertices.push(px + notchX, py, 0);
+        uvs.push(u, v);
+        uSpans.push(u);
+        vHeights.push(v);
+      }
+    }
+
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        const i0 = c * (rows + 1) + r;
+        const i1 = (c + 1) * (rows + 1) + r;
+        const i2 = (c + 1) * (rows + 1) + (r + 1);
+        const i3 = c * (rows + 1) + (r + 1);
+        indices.push(i0, i1, i2);
+        indices.push(i0, i2, i3);
+      }
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+    geom.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+
+    // Normal sanitizer to guarantee no zero or NaN normals
+    const cNormAttr = geom.attributes.normal;
+    if (cNormAttr) {
+      const cArr = cNormAttr.array;
+      for (let i = 0; i < cArr.length; i += 3) {
+        const nx = cArr[i], ny = cArr[i + 1], nz = cArr[i + 2];
+        const lenSq = nx * nx + ny * ny + nz * nz;
+        if (lenSq < 1e-5 || !isFinite(lenSq)) {
+          cArr[i] = 0;
+          cArr[i + 1] = 0;
+          cArr[i + 2] = 1;
+        }
+      }
+    }
+
+    geom.userData = {
+      basePositions: new Float32Array(vertices),
+      uSpans,
+      vHeights
+    };
+    return geom;
   }
 
   buildFishMesh(type, config) {
@@ -571,17 +965,20 @@ export class FishManager {
 
     // 1. Procedural PBR Textures (Skin with micro-scales & countershading)
     const { map, bumpMap } = this.createFishTexture(type, config);
-    const bodyMat = new THREE.MeshStandardMaterial({
+    const bodyMat = new THREE.MeshPhysicalMaterial({
       map,
       bumpMap,
-      bumpScale: 0.006,
-      roughness: 0.16,
-      metalness: 0.04
+      bumpScale: 0.007,
+      roughness: 0.18,
+      metalness: 0.02,
+      clearcoat: 0.88,
+      clearcoatRoughness: 0.06,
+      reflectivity: 0.75
     });
-    this.applyIridescentSheen(bodyMat, type === "clownfish" ? 0x38bdf8 : (type === "blue_tang" ? 0x67e8f9 : 0x93c5fd));
+    this.applyMarineTissueShader(bodyMat, type, type === "clownfish" ? 0x38bdf8 : (type === "blue_tang" ? 0x67e8f9 : 0x93c5fd));
 
     const finMat = this.createFinMaterial(type, finColor);
-    this.applyIridescentSheen(finMat, 0x67e8f9);
+    this.applyMarineTissueShader(finMat, type, 0x67e8f9);
 
     if (this.world?.injectCaustics) {
       this.world.injectCaustics(bodyMat, 0.38);
@@ -602,7 +999,8 @@ export class FishManager {
     parts.xTail = bodyData.xTail;
     parts.xHead = bodyData.xHead;
 
-    // 3. Multi-layer realistic 3D eyes
+    // 3. Multi-layer realistic biological 3D eyes with orbital socket and physical glass cornea
+    const eyePivots = [];
     const addRealisticEye = (zSign) => {
       const eyePivot = new THREE.Group();
       let eyeX = 0.54 * scale;
@@ -621,70 +1019,180 @@ export class FishManager {
         eyeX = 0.34 * scale;
         eyeY = 0.16 * scale;
         eyeZ = zSign * 0.055 * scale;
+      } else if (type === "koi") {
+        eyeX = 0.52 * scale;
+        eyeY = 0.07 * scale;
+        eyeZ = zSign * 0.145 * scale;
+      } else if (type === "betta") {
+        eyeX = 0.44 * scale;
+        eyeY = 0.02 * scale;
+        eyeZ = zSign * 0.085 * scale;
       }
 
       eyePivot.position.set(eyeX, eyeY, eyeZ);
 
-      // Sclera
-      const scleraGeom = new THREE.SphereGeometry(0.055 * scale, 20, 16);
+      // Orbital socket rim (blending eyeball seamlessly with head contour)
+      const socketColor = type === "clownfish" ? 0xcc4411 : (type === "blue_tang" ? 0x112244 : (type === "koi" ? 0xd97706 : 0x334155));
+      const rimGeom = new THREE.TorusGeometry(0.052 * scale, 0.007 * scale, 8, 24);
+      if (zSign > 0) {
+        rimGeom.rotateY(0.18);
+      } else {
+        rimGeom.rotateY(Math.PI - 0.18);
+      }
+      const rimMat = new THREE.MeshStandardMaterial({
+        color: socketColor,
+        roughness: 0.28,
+        metalness: 0.04
+      });
+      const rimMesh = new THREE.Mesh(rimGeom, rimMat);
+      eyePivot.add(rimMesh);
+
+      // Sclera core
+      const scleraGeom = new THREE.SphereGeometry(0.052 * scale, 20, 16);
       scleraGeom.scale(1.0, 1.0, 0.65);
       const scleraMat = new THREE.MeshStandardMaterial({
-        color: 0xf8fafc,
-        roughness: 0.10,
-        metalness: 0.05
+        color: 0xf1f5f9,
+        roughness: 0.12,
+        metalness: 0.04
       });
       const sclera = new THREE.Mesh(scleraGeom, scleraMat);
       eyePivot.add(sclera);
 
-      // Iris ring with species-accurate color
-      const irisColor = type === "clownfish" ? 0xd9530f : (type === "blue_tang" ? 0x0284c7 : (type === "betta" ? 0x6366f1 : 0xf59e0b));
-      const irisGeom = new THREE.CircleGeometry(0.038 * scale, 24);
+      // Realistic Biological Iris with metallic iridophores
+      const irisTex = this.createBiologicalIrisTexture(type);
+      const irisGeom = new THREE.CircleGeometry(0.039 * scale, 24);
       if (zSign > 0) {
         irisGeom.rotateY(0.18);
       } else {
         irisGeom.rotateY(Math.PI - 0.18);
       }
       const irisMat = new THREE.MeshStandardMaterial({
-        color: irisColor,
-        roughness: 0.15,
-        metalness: 0.15,
+        map: irisTex,
+        roughness: 0.10,
+        metalness: 0.25,
         side: THREE.DoubleSide
       });
       const iris = new THREE.Mesh(irisGeom, irisMat);
-      iris.position.set(0.005 * scale, 0, zSign * 0.036 * scale);
+      iris.position.set(0.006 * scale, 0, zSign * 0.035 * scale);
       eyePivot.add(iris);
 
-      // Deep obsidian pupil
-      const pupilGeom = new THREE.CircleGeometry(0.024 * scale, 20);
+      // Physical Convex Cornea Dome (High-reflection, clearcoat wet glass dome)
+      const corneaGeom = new THREE.SphereGeometry(0.054 * scale, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.58);
+      corneaGeom.scale(1.0, 1.0, 0.72);
       if (zSign > 0) {
-        pupilGeom.rotateY(0.18);
+        corneaGeom.rotateY(0.18);
       } else {
-        pupilGeom.rotateY(Math.PI - 0.18);
+        corneaGeom.rotateY(Math.PI - 0.18);
       }
-      const pupilMat = new THREE.MeshBasicMaterial({ color: 0x050505, side: THREE.DoubleSide });
-      const pupil = new THREE.Mesh(pupilGeom, pupilMat);
-      pupil.position.set(0.006 * scale, 0, zSign * 0.037 * scale);
-      eyePivot.add(pupil);
-
-      // Specular glints (dual glints giving lifelike moist cornea sparkle)
-      const glint1 = new THREE.Mesh(
-        new THREE.SphereGeometry(0.007 * scale, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0xffffff })
-      );
-      glint1.position.set(0.014 * scale, 0.012 * scale, zSign * 0.039 * scale);
-      eyePivot.add(glint1);
-
-      const glint2 = new THREE.Mesh(
-        new THREE.SphereGeometry(0.0035 * scale, 6, 6),
-        new THREE.MeshBasicMaterial({ color: 0xffffff })
-      );
-      glint2.position.set(0.004 * scale, -0.010 * scale, zSign * 0.039 * scale);
-      eyePivot.add(glint2);
+      const corneaMat = new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        roughness: 0.02,
+        metalness: 0.0,
+        transmission: 0.94,
+        thickness: 0.12,
+        ior: 1.34,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.01,
+        transparent: true,
+        opacity: 0.96,
+        depthWrite: false
+      });
+      const cornea = new THREE.Mesh(corneaGeom, corneaMat);
+      cornea.position.set(0.005 * scale, 0, zSign * 0.034 * scale);
+      eyePivot.add(cornea);
 
       model.add(eyePivot);
+      eyePivots.push({ pivot: eyePivot, zSign, baseX: eyeX, baseY: eyeY, baseZ: eyeZ });
     };
     addRealisticEye(1);
     addRealisticEye(-1);
+    parts.eyes = eyePivots;
+
+    // 3.1 Bilateral Anatomical Opercular Gill Covers (Rhythmic respiratory pump & crimson branchial slits)
+    const opercularPivots = [];
+    const gillSlitMat = new THREE.MeshBasicMaterial({ color: 0x3b0707, side: THREE.DoubleSide });
+
+    [-1, 1].forEach(zSign => {
+      let opX = 0.38 * scale;
+      let opY = 0.01 * scale;
+      let opZ = zSign * 0.125 * scale;
+      let opLen = 0.095 * scale;
+      let opH = 0.20 * scale;
+
+      if (type === "blue_tang") {
+        opX = 0.32 * scale; opY = 0.06 * scale; opZ = zSign * 0.095 * scale; opLen = 0.09 * scale; opH = 0.22 * scale;
+      } else if (type === "angelfish") {
+        opX = 0.22 * scale; opY = 0.08 * scale; opZ = zSign * 0.048 * scale; opLen = 0.08 * scale; opH = 0.28 * scale;
+      } else if (type === "koi") {
+        opX = 0.38 * scale; opY = 0.03 * scale; opZ = zSign * 0.145 * scale; opLen = 0.11 * scale; opH = 0.22 * scale;
+      } else if (type === "betta") {
+        opX = 0.30 * scale; opY = 0.01 * scale; opZ = zSign * 0.075 * scale; opLen = 0.075 * scale; opH = 0.16 * scale;
+      }
+
+      // Interior crimson gill slit liner
+      const slitGeom = new THREE.PlaneGeometry(0.02 * scale, opH * 0.70);
+      const slitMesh = new THREE.Mesh(slitGeom, gillSlitMat);
+      slitMesh.position.set(opX - opLen * 0.5, opY, opZ * 0.95);
+      slitMesh.rotation.y = zSign * (Math.PI / 2 + 0.15);
+      model.add(slitMesh);
+
+      // Articulated Operculum Flap hinged at anterior edge
+      const opPivot = new THREE.Group();
+      opPivot.position.set(opX, opY, opZ);
+
+      const flapShape = new THREE.Shape();
+      flapShape.moveTo(0, opH * 0.45);
+      flapShape.quadraticCurveTo(-opLen * 0.5, opH * 0.48, -opLen, opH * 0.20);
+      flapShape.quadraticCurveTo(-opLen * 1.1, 0, -opLen, -opH * 0.25);
+      flapShape.quadraticCurveTo(-opLen * 0.5, -opH * 0.48, 0, -opH * 0.45);
+      flapShape.closePath();
+
+      const flapGeom = new THREE.ShapeGeometry(flapShape);
+      const flapMesh = new THREE.Mesh(flapGeom, bodyMat);
+      flapMesh.castShadow = true;
+      if (zSign < 0) {
+        flapMesh.rotation.x = Math.PI; // Mirror for right flank
+      }
+      opPivot.add(flapMesh);
+      model.add(opPivot);
+
+      opercularPivots.push({ pivot: opPivot, zSign, baseRotY: 0 });
+    });
+    parts.opercula = opercularPivots;
+
+    // 3.2 Articulated Lower Jaw (Oral gape & buccal respiration pump)
+    const jawPivot = new THREE.Group();
+    let jawX = (parts.xHead || 0.72 * scale) - 0.065 * scale;
+    let jawY = -0.035 * scale;
+    if (type === "blue_tang") {
+      jawY = -0.015 * scale;
+    } else if (type === "angelfish") {
+      jawY = -0.025 * scale;
+    }
+    jawPivot.position.set(jawX, jawY, 0);
+
+    const jawShape = new THREE.Shape();
+    const jawLen = 0.075 * scale;
+    const jawDepth = 0.030 * scale;
+    jawShape.moveTo(0, 0);
+    jawShape.quadraticCurveTo(jawLen * 0.6, -jawDepth * 0.2, jawLen, jawDepth * 0.35);
+    jawShape.quadraticCurveTo(jawLen * 0.8, -jawDepth, 0, -jawDepth);
+    jawShape.closePath();
+
+    const jawGeom = new THREE.ExtrudeGeometry(jawShape, {
+      depth: 0.035 * scale,
+      bevelEnabled: true,
+      bevelSegments: 2,
+      steps: 1,
+      bevelSize: 0.006 * scale,
+      bevelThickness: 0.006 * scale
+    });
+    jawGeom.center();
+    jawGeom.translate(jawLen * 0.45, 0, 0);
+    const jawMesh = new THREE.Mesh(jawGeom, bodyMat);
+    jawPivot.add(jawMesh);
+    model.add(jawPivot);
+    parts.jaw = jawPivot;
 
     // 4. Pectoral Fins (Petal curved shape)
     const pecShape = new THREE.Shape();
@@ -722,50 +1230,16 @@ export class FishManager {
     model.add(pecRightPivot);
     parts.pecRight = pecRightPivot;
 
-    // 5. Dorsal Fin
-    let dorsalGeom;
-    if (type === "angelfish") {
-      // Magnificent high sail
-      const shape = new THREE.Shape();
-      shape.moveTo(0.12 * scale, 0.35 * scale);
-      shape.lineTo(-0.10 * scale, 1.45 * scale);
-      shape.lineTo(-0.35 * scale, 1.15 * scale);
-      shape.lineTo(-0.38 * scale, 0.20 * scale);
-      shape.closePath();
-      dorsalGeom = new THREE.ShapeGeometry(shape);
-    } else if (type === "clownfish") {
-      // Iconic 2-lobed clownfish dorsal fin (stands proud above dorsal ridge)
-      const shape = new THREE.Shape();
-      shape.moveTo(0.24 * scale, 0.26 * scale);
-      // Anterior spiny dorsal lobe
-      shape.quadraticCurveTo(0.14 * scale, 0.44 * scale, 0.02 * scale, 0.40 * scale);
-      // Notch between spiny and soft dorsal
-      shape.quadraticCurveTo(-0.06 * scale, 0.32 * scale, -0.14 * scale, 0.38 * scale);
-      // Posterior rounded soft dorsal lobe
-      shape.quadraticCurveTo(-0.25 * scale, 0.40 * scale, -0.34 * scale, 0.18 * scale);
-      shape.lineTo(-0.36 * scale, 0.10 * scale);
-      // Base attachment returning along dorsal ridge
-      shape.lineTo(-0.16 * scale, 0.20 * scale);
-      shape.lineTo(0.06 * scale, 0.27 * scale);
-      shape.closePath();
-      dorsalGeom = new THREE.ShapeGeometry(shape);
-    } else if (type === "blue_tang") {
-      const shape = new THREE.Shape();
-      shape.moveTo(0.22 * scale, 0.26 * scale);
-      shape.quadraticCurveTo(-0.06 * scale, 0.45 * scale, -0.36 * scale, 0.20 * scale);
-      shape.lineTo(-0.38 * scale, 0.08 * scale);
-      shape.closePath();
-      dorsalGeom = new THREE.ShapeGeometry(shape);
-    } else {
-      const shape = new THREE.Shape();
-      shape.moveTo(0.24 * scale, 0.15 * scale);
-      shape.quadraticCurveTo(0, 0.35 * scale, -0.35 * scale, 0.18 * scale);
-      shape.lineTo(-0.38 * scale, 0.08 * scale);
-      shape.closePath();
-      dorsalGeom = new THREE.ShapeGeometry(shape);
-    }
+    // 5. Deformable Hydrodynamic Dorsal Fin
+    const dorsalGeom = this.createDeformableDorsalFinGeom(type, scale);
     const dorsalMesh = new THREE.Mesh(dorsalGeom, finMat);
+    dorsalMesh.castShadow = true;
     model.add(dorsalMesh);
+    parts.dorsalMesh = dorsalMesh;
+    parts.dorsalGeom = dorsalGeom;
+    parts.baseDorsalPositions = dorsalGeom.userData.basePositions;
+    parts.dorsalVHeights = dorsalGeom.userData.vHeights;
+    parts.dorsalUChords = dorsalGeom.userData.uChords;
 
     // 6. Pelvic / Anal Fins
     if (type === "angelfish") {
@@ -783,16 +1257,9 @@ export class FishManager {
         feeler.rotation.z = -0.22;
         feeler.rotation.x = zSign * 0.12;
         model.add(feeler);
+        parts.feelers = parts.feelers || [];
+        parts.feelers.push({ mesh: feeler, baseRotZ: -0.22, baseRotX: zSign * 0.12, zSign });
       });
-
-      const analShape = new THREE.Shape();
-      analShape.moveTo(0.05 * scale, -0.38 * scale);
-      analShape.lineTo(-0.25 * scale, -1.35 * scale);
-      analShape.lineTo(-0.46 * scale, -0.90 * scale);
-      analShape.lineTo(-0.35 * scale, -0.20 * scale);
-      analShape.closePath();
-      const analMesh = new THREE.Mesh(new THREE.ShapeGeometry(analShape), finMat);
-      model.add(analMesh);
     } else if (type === "clownfish") {
       [-1, 1].forEach(zSign => {
         const pelvShape = new THREE.Shape();
@@ -807,56 +1274,54 @@ export class FishManager {
         pelvMesh.rotation.x = zSign * 0.10;
         model.add(pelvMesh);
       });
-
-      // Ventral anal fin
-      const analShape = new THREE.Shape();
-      analShape.moveTo(-0.06 * scale, -0.20 * scale);
-      analShape.quadraticCurveTo(-0.18 * scale, -0.28 * scale, -0.32 * scale, -0.14 * scale);
-      analShape.lineTo(-0.35 * scale, -0.08 * scale);
-      analShape.closePath();
-      const analMesh = new THREE.Mesh(new THREE.ShapeGeometry(analShape), finMat);
-      model.add(analMesh);
-    } else {
-      const analShape = new THREE.Shape();
-      analShape.moveTo(-0.05 * scale, -0.20 * scale);
-      analShape.quadraticCurveTo(-0.18 * scale, -0.28 * scale, -0.34 * scale, -0.12 * scale);
-      analShape.lineTo(-0.36 * scale, -0.06 * scale);
-      analShape.closePath();
-      const analMesh = new THREE.Mesh(new THREE.ShapeGeometry(analShape), finMat);
-      model.add(analMesh);
     }
 
-    // 7. Caudal Fin attached at exact peduncle end
+    const analGeom = this.createDeformableAnalFinGeom(type, scale);
+    const analMesh = new THREE.Mesh(analGeom, finMat);
+    analMesh.castShadow = true;
+    model.add(analMesh);
+    parts.analMesh = analMesh;
+    parts.analGeom = analGeom;
+    parts.baseAnalPositions = analGeom.userData.basePositions;
+    parts.analVHeights = analGeom.userData.vHeights;
+    parts.analUChords = analGeom.userData.uChords;
+
+    // 7. Deformable Caudal Fin attached at exact peduncle end
     const caudalFinPivot = new THREE.Group();
     caudalFinPivot.position.set(bodyData.xTail, 0, 0);
     model.add(caudalFinPivot);
     parts.caudalFinPivot = caudalFinPivot;
 
-    const tailShape = new THREE.Shape();
     const hTail = bodyData.spec.stations[0].h * scale;
-    tailShape.moveTo(0, hTail);
-    if (type === "clownfish" || type === "blue_tang") {
-      tailShape.quadraticCurveTo(-0.14 * scale, 0.24 * scale, -0.36 * scale, 0.18 * scale);
-      tailShape.quadraticCurveTo(-0.42 * scale, 0, -0.36 * scale, -0.18 * scale);
-      tailShape.quadraticCurveTo(-0.14 * scale, -0.24 * scale, 0, -hTail);
-    } else if (type === "angelfish") {
-      tailShape.lineTo(-0.44 * scale, 0.36 * scale);
-      tailShape.quadraticCurveTo(-0.26 * scale, 0, -0.44 * scale, -0.36 * scale);
-      tailShape.lineTo(0, -hTail);
-    } else if (type === "betta") {
-      tailShape.bezierCurveTo(-0.25 * scale, 0.55 * scale, -0.70 * scale, 0.60 * scale, -0.95 * scale, 0.30 * scale);
-      tailShape.bezierCurveTo(-1.10 * scale, 0, -0.95 * scale, -0.30 * scale, -0.70 * scale, -0.60 * scale);
-      tailShape.bezierCurveTo(-0.25 * scale, -0.55 * scale, 0, -hTail, 0, -hTail);
-    } else {
-      tailShape.quadraticCurveTo(-0.20 * scale, 0.30 * scale, -0.44 * scale, 0.22 * scale);
-      tailShape.quadraticCurveTo(-0.35 * scale, 0, -0.44 * scale, -0.22 * scale);
-      tailShape.quadraticCurveTo(-0.20 * scale, -0.30 * scale, 0, -hTail);
-    }
-    tailShape.closePath();
-
-    const tailMesh = new THREE.Mesh(new THREE.ShapeGeometry(tailShape), finMat);
+    const caudalGeom = this.createDeformableCaudalFinGeom(type, scale, hTail);
+    const tailMesh = new THREE.Mesh(caudalGeom, finMat);
+    tailMesh.castShadow = true;
     caudalFinPivot.add(tailMesh);
     parts.tailMesh = tailMesh;
+    parts.caudalFinGeom = caudalGeom;
+    parts.baseCaudalPositions = caudalGeom.userData.basePositions;
+    parts.caudalUSpans = caudalGeom.userData.uSpans;
+    parts.caudalVHeights = caudalGeom.userData.vHeights;
+
+    // 8. Living Sensory Barbels for Koi
+    if (type === "koi") {
+      parts.barbels = [];
+      [-1, 1].forEach(side => {
+        const barbelGeom = new THREE.CylinderGeometry(0.007 * scale, 0.001 * scale, 0.22 * scale, 6);
+        barbelGeom.translate(0, -0.11 * scale, 0);
+        const barbelMat = new THREE.MeshStandardMaterial({
+          color: 0xf59e0b,
+          roughness: 0.25,
+          metalness: 0.04
+        });
+        const barbel = new THREE.Mesh(barbelGeom, barbelMat);
+        barbel.position.set(0.66 * scale, -0.05 * scale, side * 0.07 * scale);
+        barbel.rotation.z = -0.55;
+        barbel.rotation.x = side * 0.38;
+        model.add(barbel);
+        parts.barbels.push({ mesh: barbel, side, baseRotZ: -0.55, baseRotX: side * 0.38 });
+      });
+    }
 
     return { group, parts };
   }
@@ -1184,6 +1649,43 @@ export class FishManager {
     group.add(gonadGroup);
     parts.gonads = gonadGroup;
 
+    // 2.1 8 Radial Gastrovascular Canals (Bioluminescent radial pathways through umbrella)
+    const canalsGroup = new THREE.Group();
+    const canalMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.50,
+      blending: THREE.AdditiveBlending
+    });
+    for (let c = 0; c < 8; c++) {
+      const cAngle = (c * Math.PI) / 4;
+      const cGeom = new THREE.CylinderGeometry(0.0035 * scale, 0.0018 * scale, (R0 * 0.96 - 0.12 * scale), 4);
+      cGeom.rotateZ(Math.PI / 2);
+      cGeom.translate((R0 * 0.96 + 0.12 * scale) / 2, 0, 0);
+      const cMesh = new THREE.Mesh(cGeom, canalMat);
+      cMesh.rotation.y = cAngle;
+      cMesh.position.y = 0.06 * scale;
+      canalsGroup.add(cMesh);
+    }
+    group.add(canalsGroup);
+    parts.canalsMat = canalMat;
+
+    // 2.2 8 Marginal Rhopalia (Sensory receptors at lappet notches)
+    const rhopaliaMat = new THREE.MeshBasicMaterial({
+      color: 0xa5f3fc,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending
+    });
+    const rhopaliaGeom = new THREE.SphereGeometry(0.012 * scale, 8, 8);
+    for (let r = 0; r < 8; r++) {
+      const rAngle = (r * Math.PI) / 4;
+      const rMesh = new THREE.Mesh(rhopaliaGeom, rhopaliaMat);
+      rMesh.position.set(Math.cos(rAngle) * R0 * 0.99, 0.01 * scale, Math.sin(rAngle) * R0 * 0.99);
+      group.add(rMesh);
+    }
+    parts.rhopaliaMat = rhopaliaMat;
+
     // 3. Central Manubrium & 4 Ruffled Ribbon Oral Arms (Chiffon frills with soft feathered edge)
     const oralArms = [];
     if (!this.oralArmTexture) {
@@ -1428,8 +1930,10 @@ export class FishManager {
 
   buildMantaRayMesh(config) {
     const group = new THREE.Group();
+    const model = new THREE.Group();
+    group.add(model);
     const scale = config.size || 2.4;
-    const parts = {};
+    const parts = { model };
 
     // 1. Disc Body Geometry (Watertight manifold batoid hydrofoil)
     const numRings = 40;     // along length (Z from tail to snout)
@@ -1504,30 +2008,51 @@ export class FishManager {
     geom.computeVertexNormals();
 
     const { map, bumpMap } = this.createMantaRayTexture();
-    const mat = new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshPhysicalMaterial({
       map,
       bumpMap,
-      bumpScale: 0.005,
-      roughness: 0.20,
-      metalness: 0.05
+      bumpScale: 0.006,
+      roughness: 0.22,
+      metalness: 0.02,
+      clearcoat: 0.88,
+      clearcoatRoughness: 0.08,
+      reflectivity: 0.72
     });
 
-    this.applyIridescentSheen(mat, 0x38bdf8);
+    this.applyMarineTissueShader(mat, "clownfish", 0x38bdf8);
 
     const discMesh = new THREE.Mesh(geom, mat);
     discMesh.castShadow = true;
-    group.add(discMesh);
+    model.add(discMesh);
     parts.discMesh = discMesh;
     parts.basePositions = vertices.slice();
     parts.scale = scale;
 
-    // Shared dark dorsal material with iridescent sheen
-    const darkDorsalMat = new THREE.MeshStandardMaterial({
-      color: 0x090f1a,
-      roughness: 0.22,
-      metalness: 0.05
+    // Lateral Elasmobranch Eyes on outer head margin
+    [-1, 1].forEach(side => {
+      const eyeGeom = new THREE.SphereGeometry(0.042 * scale, 16, 12);
+      eyeGeom.scale(0.8, 0.9, 1.2);
+      const eyeMat = new THREE.MeshPhysicalMaterial({
+        color: 0x111827,
+        roughness: 0.02,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.02
+      });
+      const eye = new THREE.Mesh(eyeGeom, eyeMat);
+      eye.position.set(side * 0.44 * scale, 0.04 * scale, 1.25 * scale);
+      model.add(eye);
     });
-    this.applyIridescentSheen(darkDorsalMat, 0x38bdf8);
+
+    // Shared dark dorsal material with iridescent sheen
+    const darkDorsalMat = new THREE.MeshPhysicalMaterial({
+      color: 0x090f1a,
+      roughness: 0.25,
+      metalness: 0.02,
+      clearcoat: 0.85,
+      clearcoatRoughness: 0.08,
+      reflectivity: 0.70
+    });
+    this.applyMarineTissueShader(darkDorsalMat, "clownfish", 0x38bdf8);
 
     if (this.world?.injectCaustics) {
       this.world.injectCaustics(mat, 0.42);
@@ -1535,17 +2060,29 @@ export class FishManager {
     }
 
     // 2. Cephalic Horns (Dual forward-curling flaps with dark dorsal mantle finish)
+    parts.cephalicHorns = [];
     [-1, 1].forEach(side => {
+      const hornPivot = new THREE.Group();
+      hornPivot.position.set(side * 0.38 * scale, -0.02 * scale, 1.35 * scale);
+
       const hornCurve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(side * 0.40 * scale, -0.02 * scale, 1.35 * scale),
-        new THREE.Vector3(side * 0.42 * scale, -0.01 * scale, 1.65 * scale),
-        new THREE.Vector3(side * 0.35 * scale, -0.05 * scale, 1.88 * scale),
-        new THREE.Vector3(side * 0.22 * scale, -0.08 * scale, 1.95 * scale)
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(side * 0.04 * scale, 0.01 * scale, 0.30 * scale),
+        new THREE.Vector3(side * -0.05 * scale, -0.03 * scale, 0.52 * scale),
+        new THREE.Vector3(side * -0.16 * scale, -0.06 * scale, 0.60 * scale)
       ]);
       const hornGeom = new THREE.TubeGeometry(hornCurve, 16, 0.055 * scale, 8, false);
       const hornMesh = new THREE.Mesh(hornGeom, darkDorsalMat);
       hornMesh.castShadow = true;
-      group.add(hornMesh);
+      hornPivot.add(hornMesh);
+      model.add(hornPivot);
+
+      parts.cephalicHorns.push({
+        pivot: hornPivot,
+        side,
+        baseRotY: 0,
+        baseRotX: 0
+      });
     });
 
     // 3. Slender Whip Tail with Dark Dorsal Sheen
@@ -1558,7 +2095,7 @@ export class FishManager {
     const tailGeom = new THREE.TubeGeometry(tailCurve, 24, 0.026 * scale, 8, false);
     const tailMesh = new THREE.Mesh(tailGeom, darkDorsalMat);
     tailMesh.castShadow = true;
-    group.add(tailMesh);
+    model.add(tailMesh);
     parts.tailMesh = tailMesh;
 
     // 4. Tiny Dorsal Fin at Tail Base
@@ -1570,7 +2107,7 @@ export class FishManager {
     const dMesh = new THREE.Mesh(new THREE.ShapeGeometry(dShape), darkDorsalMat);
     dMesh.position.set(0, 0.06 * scale, -1.25 * scale);
     dMesh.rotation.y = Math.PI / 2;
-    group.add(dMesh);
+    model.add(dMesh);
 
     return { group, parts };
   }
@@ -1623,6 +2160,7 @@ export class FishManager {
           let closestFood = null;
           let minDist = 7.0; // Detection radius in open water
           for (const food of activeFoods) {
+            if (food.life <= 0 || food.bitesLeft <= 0) continue;
             const d = pos.distanceTo(food.mesh.position);
             if (d < minDist) {
               minDist = d;
@@ -1632,11 +2170,22 @@ export class FishManager {
 
           if (closestFood) {
             targetPos = closestFood.mesh.position;
-            targetSpeed = f.maxSpeed * 1.5;
+            // Strike acceleration when closing in on prey pellet
+            if (minDist < 1.4) {
+              targetSpeed = f.maxSpeed * 2.0;
+              f.gaitTimer = 0.15; // Force burst acceleration phase
+            } else {
+              targetSpeed = f.maxSpeed * 1.5;
+            }
 
             // Check if reached food
-            if (minDist < 0.35) {
-              this.foodManager.consume(closestFood, pos, f.id);
+            if (minDist < 0.40) {
+              const consumed = this.foodManager.consume(closestFood, pos, f.id);
+              if (consumed) {
+                f.data.hunger = Math.min(100, (f.data.hunger || 0) + 25);
+                f.data.happiness = Math.min(100, (f.data.happiness || 0) + 15);
+                f.biteTimer = 0.35; // Trigger labriform braking flare
+              }
             }
           }
         }
@@ -1678,25 +2227,25 @@ export class FishManager {
 
       // 2. Steer towards target
       if (targetPos) {
-        const desired = new THREE.Vector3().subVectors(targetPos, pos).normalize().multiplyScalar(targetSpeed);
-        const steer = new THREE.Vector3().subVectors(desired, f.velocity);
-        steer.clampLength(0, (f.isMantaRay ? 1.4 : 2.5) * delta);
-        f.velocity.add(steer);
+        _vDesired.subVectors(targetPos, pos).normalize().multiplyScalar(targetSpeed);
+        _vSteer.subVectors(_vDesired, f.velocity);
+        _vSteer.clampLength(0, (f.isMantaRay ? 1.4 : 2.5) * delta);
+        f.velocity.add(_vSteer);
       }
 
       // 3. Flocking & Separation from other fish
-      const sepForce = new THREE.Vector3();
+      _vSepForce.set(0, 0, 0);
       for (let j = 0; j < this.fishList.length; j++) {
         if (i === j) continue;
         const other = this.fishList[j];
         const d = pos.distanceTo(other.group.position);
         if (d < 0.6 && d > 0.001) {
-          const diff = new THREE.Vector3().subVectors(pos, other.group.position).normalize();
-          diff.divideScalar(d);
-          sepForce.add(diff);
+          _vDiff.subVectors(pos, other.group.position).normalize();
+          _vDiff.divideScalar(d);
+          _vSepForce.add(_vDiff);
         }
       }
-      f.velocity.add(sepForce.multiplyScalar(delta * 1.8));
+      f.velocity.addScaledVector(_vSepForce, delta * 1.8);
 
       // 4. Open Ocean Soft Homing Guidance (No hard glass walls!)
       const maxDistX = 24.0;
@@ -1730,19 +2279,19 @@ export class FishManager {
       if (f.isMantaRay) {
         // Manta Ray Heading, Banking Roll & Traveling Wing Wave Kinematics
         if (f.velocity.lengthSq() > 0.001) {
-          const lookTarget = pos.clone().add(f.velocity);
-          f.group.lookAt(lookTarget);
+          _vLookTarget.addVectors(pos, f.velocity);
+          f.group.lookAt(_vLookTarget);
         }
 
-        // Natural banking roll proportional to turn rate
-        const bank = -f.velocity.x * 0.22;
-        f.group.rotation.z = bank;
-        const pitch = -Math.atan2(f.velocity.y, Math.max(0.1, Math.hypot(f.velocity.x, f.velocity.z)));
-        f.group.rotation.x = pitch;
+        // Natural hydrodynamic banking roll applied to local forward spine axis (+Z)
+        const bank = THREE.MathUtils.clamp(-f.velocity.x * 0.24, -0.45, 0.45);
+        if (f.parts.model) {
+          f.parts.model.rotation.z = bank;
+        }
 
-        // Batoid Traveling Pectoral Flap Kinematics
+        // Batoid Traveling Pectoral Flap Kinematics (Majestic pelagic hydrofoil glide)
         const s = f.parts.scale || 2.4;
-        const omega = 1.8;
+        const omega = 1.35;
         const tWave = time * omega + f.phaseOffset;
 
         if (f.parts.discMesh && f.parts.basePositions) {
@@ -1757,14 +2306,14 @@ export class FishManager {
             const origZ = basePos[k * 3 + 2];
 
             const spanRatio = Math.min(1.0, Math.abs(origX) / maxSpan);
-            // Traveling wave flapped down trailing edge
-            const wingFlap = Math.sin(tWave - origZ * 0.75) * Math.pow(spanRatio, 1.35) * (0.50 * s);
-            const bodyHeave = Math.cos(tWave) * (0.035 * s);
+            // Traveling wave flapped down trailing edge with graceful natural amplitude
+            const wingFlap = Math.sin(tWave - origZ * 0.65) * Math.pow(spanRatio, 1.45) * (0.22 * s);
+            const bodyHeave = Math.cos(tWave) * (0.025 * s);
 
             posAttr.setY(k, origY + wingFlap + bodyHeave);
 
             if (spanRatio > 0.45) {
-              const curl = Math.cos(tWave - origZ * 0.75) * Math.pow(spanRatio, 1.8) * (0.07 * s);
+              const curl = Math.cos(tWave - origZ * 0.65) * Math.pow(spanRatio, 1.8) * (0.045 * s);
               posAttr.setZ(k, origZ - curl);
             }
           }
@@ -1772,10 +2321,36 @@ export class FishManager {
           f.parts.discMesh.geometry.computeVertexNormals();
         }
 
-        // Whip tail trailing undulation
+        // Whip tail trailing undulation (fluid multi-axis lag)
         if (f.parts.tailMesh) {
-          f.parts.tailMesh.rotation.x = Math.sin(tWave - 1.8) * 0.10;
-          f.parts.tailMesh.rotation.y = Math.cos(tWave - 1.8) * 0.08;
+          f.parts.tailMesh.rotation.x = Math.sin(tWave - 1.5) * 0.16;
+          f.parts.tailMesh.rotation.y = Math.cos(tWave - 1.2) * 0.14;
+          f.parts.tailMesh.rotation.z = Math.sin(tWave - 2.0) * 0.08;
+        }
+
+        // Dynamic Cephalic Horn Unfurling & Channeling
+        if (f.parts.cephalicHorns) {
+          const isFeeding = (f.data.hunger < 95 && activeFoods.length > 0) || f.scaredTimer > 0;
+          const targetUnfurl = isFeeding ? 0.38 : (Math.sin(time * 0.4) > 0.4 ? 0.22 : -0.10);
+          f.hornUnfurl = THREE.MathUtils.lerp(f.hornUnfurl || 0, targetUnfurl, delta * 2.5);
+
+          for (const h of f.parts.cephalicHorns) {
+            h.pivot.rotation.y = h.side * f.hornUnfurl + Math.sin(tWave - 0.8) * 0.06 * h.side;
+            h.pivot.rotation.x = Math.sin(tWave - 1.2) * 0.08;
+          }
+        }
+
+        // Seafloor sand interaction (Dust Plumes stirred by Manta Ray wing flap downwash)
+        if (this.world && this.world.triggerSedimentDust) {
+          const distFromFloor = pos.y - this.bounds.minY;
+          if (distFromFloor < 1.4) {
+            const wingFlapPhase = Math.sin(tWave);
+            if (wingFlapPhase > 0.82 && (!f.lastDustTime || time - f.lastDustTime > 0.75)) {
+              f.lastDustTime = time;
+              this.world.triggerSedimentDust(pos.x - 1.5, pos.z, 1.25, 2);
+              this.world.triggerSedimentDust(pos.x + 1.5, pos.z, 1.25, 2);
+            }
+          }
         }
       } else if (f.isJellyfish) {
         // Asymmetric two-phase propulsion cycle (power stroke vs recovery glide)
@@ -1812,6 +2387,14 @@ export class FishManager {
             f.parts.rim.material.opacity = 0.45 + (1.0 - scaleBellXZ) * 1.5;
           }
         }
+        if (f.parts.canalsMat) {
+          const canalPulse = (tCycle < 0.65) ? Math.sin((tCycle / 0.65) * Math.PI) : 0;
+          f.parts.canalsMat.opacity = 0.35 + canalPulse * 0.55;
+        }
+        if (f.parts.rhopaliaMat) {
+          const rhopaliaPulse = (tCycle < 0.65) ? Math.sin((tCycle / 0.65) * Math.PI) : 0;
+          f.parts.rhopaliaMat.opacity = 0.55 + rhopaliaPulse * 0.45;
+        }
 
         f.group.rotation.x = Math.sin(time * 1.2) * 0.08;
         f.group.rotation.z = Math.cos(time * 1.2) * 0.08;
@@ -1845,16 +2428,47 @@ export class FishManager {
           }
         }
       } else {
-        // Fish heading lookAt
-        if (f.velocity.lengthSq() > 0.001) {
-          const lookTarget = pos.clone().add(f.velocity);
-          f.group.lookAt(lookTarget);
+        // 1. Natural Intermittent Locomotion ("Burst-and-Glide" gait cycle)
+        if (f.gaitTimer === undefined) {
+          f.gaitTimer = (f.phaseOffset || 0) * 1.5;
+        }
+        f.gaitTimer += delta;
+
+        const gaitCycle = 3.6; // 3.6s cycle
+        const tGait = f.gaitTimer % gaitCycle;
+        const burstDuration = 1.35; // 1.35s propulsive burst, 2.25s coasting glide
+        let burstFactor = 1.0;
+
+        if (f.scaredTimer > 0) {
+          // Escape response: continuous rapid propulsion
+          burstFactor = 1.5;
+        } else if (tGait < burstDuration) {
+          // Burst phase: smooth bell curve acceleration
+          const burstProgress = tGait / burstDuration;
+          burstFactor = 0.35 + 0.65 * Math.sin(burstProgress * Math.PI);
+        } else {
+          // Glide phase: gentle hydrodynamic drift with holding fin trim
+          const glideProgress = (tGait - burstDuration) / (gaitCycle - burstDuration);
+          burstFactor = 0.12 + 0.15 * (1.0 - glideProgress);
         }
 
-        // Biomechanical travelling sine wave undulation (Full-body spine & vertex wave kinematics)
-        const waveFreq = (f.scaredTimer > 0 ? 14 : 7.2) * (currentSpeed / (f.maxSpeed || 1));
-        const tWave = time * waveFreq + f.phaseOffset;
+        // 2. Heading, 3D Dynamic Banking Roll & Pitch
+        if (f.velocity.lengthSq() > 0.001) {
+          _vLookTarget.addVectors(pos, f.velocity);
+          f.group.lookAt(_vLookTarget);
+        }
 
+        // 3D Hydrodynamic banking roll angle calculated from lateral velocity
+        const bankAngle = THREE.MathUtils.clamp(-f.velocity.x * 0.22, -0.35, 0.35);
+
+        // Biomechanical travelling sine wave undulation
+        const baseFreq = (f.scaredTimer > 0 ? 14 : 7.2) * (currentSpeed / (f.maxSpeed || 1));
+        const effectiveFreq = baseFreq * (0.55 + 0.55 * burstFactor);
+        const tWave = time * effectiveFreq + f.phaseOffset;
+        const fishScale = f.data.size || 1.0;
+        const effectiveAmp = 0.14 * fishScale * (0.25 + 0.75 * burstFactor);
+
+        // 3. Anatomical Body Spine Wave Deformation
         if (f.parts.bodyGeom && f.parts.basePositions) {
           const posAttr = f.parts.bodyGeom.attributes.position;
           const basePos = f.parts.basePositions;
@@ -1862,39 +2476,197 @@ export class FishManager {
           const xTail = f.parts.xTail;
           const xHead = f.parts.xHead;
           const len = Math.max(0.1, xHead - xTail);
-          const fishScale = f.data.size || 1.0;
 
           for (let k = 0; k < count; k++) {
             const origX = basePos[k * 3];
             const origZ = basePos[k * 3 + 2];
             const u = THREE.MathUtils.clamp((origX - xTail) / len, 0, 1);
             const tailFactor = Math.pow(1 - u, 1.5);
-            const wave = Math.sin(tWave - (1 - u) * 3.2) * 0.14 * fishScale * tailFactor;
+            const wave = Math.sin(tWave - (1 - u) * 3.2) * effectiveAmp * tailFactor;
             posAttr.setZ(k, origZ + wave);
           }
           posAttr.needsUpdate = true;
         }
 
+        // 4. Caudal Peduncle & Deformable Caudal Fin
         if (f.parts.caudalFinPivot) {
-          const fishScale = f.data.size || 1.0;
-          const peduncleWave = Math.sin(tWave - 3.2) * 0.14 * fishScale;
+          const peduncleWave = Math.sin(tWave - 3.2) * effectiveAmp;
           f.parts.caudalFinPivot.position.z = peduncleWave;
-          f.parts.caudalFinPivot.rotation.y = Math.sin(tWave - 3.6) * 0.42;
+          f.parts.caudalFinPivot.rotation.y = Math.sin(tWave - 3.6) * 0.42 * (0.3 + 0.7 * burstFactor);
         }
 
-        // Head counter-yaw & gentle natural roll
+        if (f.parts.caudalFinGeom && f.parts.baseCaudalPositions && f.parts.caudalUSpans) {
+          const posAttr = f.parts.caudalFinGeom.attributes.position;
+          const basePos = f.parts.baseCaudalPositions;
+          const uSpans = f.parts.caudalUSpans;
+          const vHeights = f.parts.caudalVHeights;
+          const count = posAttr.count;
+
+          if (f.type === "betta" && vHeights) {
+            // Betta magnificent silk veil tail fluid multi-harmonic waving
+            for (let k = 0; k < count; k++) {
+              const origZ = basePos[k * 3 + 2];
+              const origY = basePos[k * 3 + 1];
+              const uSpan = uSpans[k];
+              const vHeight = vHeights[k];
+
+              // Travelling silk wave with trailing edge flutter
+              const wave1 = Math.sin(tWave - 2.5 - uSpan * 3.6) * (0.24 * fishScale * Math.pow(uSpan, 1.15) * (0.35 + 0.65 * burstFactor));
+              const wave2 = Math.sin(time * 5.0 - uSpan * 4.2 + vHeight * 2.5 + f.phaseOffset) * (0.065 * fishScale * Math.pow(uSpan, 1.4));
+              const verticalFlutter = Math.cos(time * 3.2 + uSpan * 2.8 + vHeight * Math.PI) * (0.045 * fishScale * uSpan);
+
+              posAttr.setZ(k, origZ + wave1 + wave2);
+              posAttr.setY(k, origY + verticalFlutter);
+            }
+          } else {
+            for (let k = 0; k < count; k++) {
+              const origZ = basePos[k * 3 + 2];
+              const uSpan = uSpans[k];
+              // Hydrodynamic flipper cupping: trailing tips lag behind peduncle swing
+              const finFlex = Math.sin(tWave - 3.8 - uSpan * 2.2) * (0.08 * fishScale * Math.pow(uSpan, 1.35) * burstFactor);
+              posAttr.setZ(k, origZ + finFlex);
+            }
+          }
+          posAttr.needsUpdate = true;
+        }
+
+        // 5. Deformable Dorsal Fin Kinematics (Trailing wave lag + Fluid flutter)
+        if (f.parts.dorsalGeom && f.parts.baseDorsalPositions && f.parts.dorsalVHeights && f.parts.dorsalUChords) {
+          const posAttr = f.parts.dorsalGeom.attributes.position;
+          const basePos = f.parts.baseDorsalPositions;
+          const vHeights = f.parts.dorsalVHeights;
+          const uChords = f.parts.dorsalUChords;
+          const count = posAttr.count;
+
+          for (let k = 0; k < count; k++) {
+            const origZ = basePos[k * 3 + 2];
+            const v = vHeights[k]; // 0 at base, 1 at tip
+            const u = uChords[k];  // 0 at front, 1 at rear
+            const rayWave = Math.sin(tWave - 1.2 - u * 2.8) * (0.08 * fishScale * v * (0.3 + 0.7 * burstFactor));
+            const flutter = Math.sin(time * 8.5 + u * 4.0 + f.phaseOffset) * (0.015 * fishScale * v * v);
+            posAttr.setZ(k, origZ + rayWave + flutter);
+          }
+          posAttr.needsUpdate = true;
+        }
+
+        // 6. Deformable Anal Fin Kinematics
+        if (f.parts.analGeom && f.parts.baseAnalPositions && f.parts.analVHeights && f.parts.analUChords) {
+          const posAttr = f.parts.analGeom.attributes.position;
+          const basePos = f.parts.baseAnalPositions;
+          const vHeights = f.parts.analVHeights;
+          const uChords = f.parts.analUChords;
+          const count = posAttr.count;
+
+          for (let k = 0; k < count; k++) {
+            const origZ = basePos[k * 3 + 2];
+            const v = vHeights[k];
+            const u = uChords[k];
+            const rayWave = Math.sin(tWave - 1.8 - u * 2.5) * (0.07 * fishScale * v * (0.3 + 0.7 * burstFactor));
+            posAttr.setZ(k, origZ + rayWave);
+          }
+          posAttr.needsUpdate = true;
+        }
+
+        // 7. Head Counter-Yaw, Natural Breathing Roll & Hydrodynamic Banking
         if (f.parts.model) {
-          f.parts.model.rotation.y = -Math.PI / 2 - Math.sin(tWave) * 0.05;
-          f.parts.model.rotation.z = Math.sin(tWave) * 0.06;
+          f.parts.model.rotation.x = bankAngle;
+          f.parts.model.rotation.y = -Math.PI / 2 - Math.sin(tWave) * 0.05 * burstFactor;
+          f.parts.model.rotation.z = Math.sin(tWave) * 0.06 * burstFactor;
         }
 
-        // Pectoral fin dynamic rowing motion
+        // 8. Pectoral Fins (Labriform Rowing & Pitch Feathering Kinematics)
         if (f.parts.pecLeft && f.parts.pecRight) {
-          const pecFlap = Math.sin(time * waveFreq * 1.25 + f.phaseOffset) * 0.35;
-          f.parts.pecLeft.rotation.y = 0.45 + pecFlap;
-          f.parts.pecLeft.rotation.z = Math.cos(time * waveFreq * 1.25 + f.phaseOffset) * 0.15;
-          f.parts.pecRight.rotation.y = -0.45 - pecFlap;
-          f.parts.pecRight.rotation.z = -Math.cos(time * waveFreq * 1.25 + f.phaseOffset) * 0.15;
+          const pecFreq = effectiveFreq * 1.15;
+          const pecPhase = time * pecFreq + f.phaseOffset;
+          let pecSweep = Math.sin(pecPhase) * (0.28 + 0.18 * burstFactor);
+          let pecFeather = Math.cos(pecPhase) * 0.18;
+
+          // Natural labriform braking flare when snapping prey
+          if (f.biteTimer > 0) {
+            f.biteTimer -= delta;
+            pecSweep = 0.58; // Flare outward to brake forward momentum
+            pecFeather = 0.32;
+          }
+
+          f.parts.pecLeft.rotation.y = 0.42 + pecSweep;
+          f.parts.pecLeft.rotation.x = pecFeather;
+          f.parts.pecLeft.rotation.z = 0.10 + Math.sin(pecPhase) * 0.08;
+
+          f.parts.pecRight.rotation.y = -0.42 - pecSweep;
+          f.parts.pecRight.rotation.x = -pecFeather;
+          f.parts.pecRight.rotation.z = -0.10 - Math.sin(pecPhase) * 0.08;
+        }
+
+        // 9. Sensory Barbels (Swaying in currents for Koi)
+        if (f.parts.barbels) {
+          for (const b of f.parts.barbels) {
+            const barbelLag = Math.sin(time * 3.8 + b.side * 1.5) * 0.18;
+            b.mesh.rotation.z = b.baseRotZ + barbelLag;
+            b.mesh.rotation.x = b.baseRotX + Math.cos(time * 3.2 + b.side) * 0.12;
+          }
+        }
+
+        // 10. Long Sensory Feelers (Swaying in currents for Angelfish)
+        if (f.parts.feelers) {
+          for (const fl of f.parts.feelers) {
+            const feelerLag = Math.sin(tWave - 1.6) * (0.16 * (0.4 + 0.6 * burstFactor));
+            fl.mesh.rotation.z = fl.baseRotZ + feelerLag;
+            fl.mesh.rotation.x = fl.baseRotX + Math.cos(tWave - 1.6) * 0.09 * fl.zSign;
+          }
+        }
+
+        // 11. Biological Opercular Breathing & Buccal Jaw Mechanics
+        const respFreq = (f.scaredTimer > 0 || burstFactor > 0.75) ? 2.6 : 1.4;
+        const tResp = time * respFreq + (f.phaseOffset || 0) * 2.0;
+        const respCycle = Math.sin(tResp);
+
+        // Opercular gill flaring: expands during water expulsion
+        if (f.parts.opercula) {
+          const flare = (f.biteTimer > 0) ? 0.22 : Math.max(0.01, respCycle * 0.12 + 0.04);
+          for (const op of f.parts.opercula) {
+            op.pivot.rotation.y = op.zSign * (op.baseRotY + flare);
+          }
+        }
+
+        // Articulated Lower Jaw: drops slightly during breathing intake; drops wide during feeding strike
+        if (f.parts.jaw) {
+          if (f.biteTimer > 0) {
+            f.parts.jaw.rotation.z = -0.32; // Predatory suction gape
+          } else {
+            const jawDrop = Math.max(0.0, -respCycle) * 0.08;
+            f.parts.jaw.rotation.z = -jawDrop;
+          }
+        }
+
+        // 12. Alert Eye Micro-Saccades & Autonomous Target Fixation
+        if (f.parts.eyes) {
+          let eyeYaw = 0;
+          let eyePitch = 0;
+          if (targetPos) {
+            // Angle towards target position in local space
+            const relX = targetPos.x - pos.x;
+            const relY = targetPos.y - pos.y;
+            eyeYaw = THREE.MathUtils.clamp(relX * 0.08, -0.14, 0.14);
+            eyePitch = THREE.MathUtils.clamp(relY * 0.08, -0.10, 0.10);
+          } else {
+            // Micro-saccadic shift
+            const saccadeActive = Math.sin(time * 0.8 + (f.phaseOffset || 0)) > 0.82;
+            eyeYaw = saccadeActive ? Math.sin(time * 16.0) * 0.04 : 0;
+          }
+
+          for (const eye of f.parts.eyes) {
+            eye.pivot.rotation.y = eye.zSign * 0.18 + eyeYaw;
+            eye.pivot.rotation.z = eyePitch;
+          }
+        }
+
+        // 13. Seafloor Sand Interaction (Dust Plumes from benthic fish)
+        if (this.world && this.world.triggerSedimentDust) {
+          const distFromFloor = pos.y - this.bounds.minY;
+          if (distFromFloor < 0.65 && f.velocity.y < -0.05 && (!f.lastDustTime || time - f.lastDustTime > 1.2)) {
+            f.lastDustTime = time;
+            this.world.triggerSedimentDust(pos.x, pos.z, 0.85, 1);
+          }
         }
       }
     }

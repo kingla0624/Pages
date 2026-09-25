@@ -13,6 +13,7 @@ export class FoodManager {
     this.gameState = gameState;
     this.foods = []; // active food items
     this.floatingEffects = []; // heart / coin 3D sprites
+    this.effectPool = []; // reusable sprite pool (zero GC allocations during feeding)
 
     // Reusable geometry and materials for performance
     this.pelletGeom = new THREE.DodecahedronGeometry(0.08, 0);
@@ -28,8 +29,28 @@ export class FoodManager {
       metalness: 0.05
     });
 
+    // Pre-rendered billboard textures and reusable materials for eat effects
+    this.heartTexture = this.createEmojiTexture("❤️");
+    this.coinTexture = this.createEmojiTexture("🪙+1");
+    this.heartMaterial = new THREE.SpriteMaterial({ map: this.heartTexture, transparent: true, opacity: 1, depthWrite: false });
+    this.coinMaterial = new THREE.SpriteMaterial({ map: this.coinTexture, transparent: true, opacity: 1, depthWrite: false });
+
     this.rootGroup = new THREE.Group();
     this.scene.add(this.rootGroup);
+  }
+
+  createEmojiTexture(text) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    ctx.font = "40px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 32, 32);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
   }
 
   spawnFood(originX, originZ) {
@@ -73,24 +94,23 @@ export class FoodManager {
   }
 
   createEatEffect(pos, type = "heart") {
-    // Small billboard particle that floats upward and fades
-    const canvas = document.createElement("canvas");
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext("2d");
-    ctx.font = "40px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(type === "heart" ? "❤️" : "🪙+1", 32, 32);
+    const mat = type === "heart" ? this.heartMaterial : this.coinMaterial;
+    let sprite;
 
-    const texture = new THREE.CanvasTexture(canvas);
-    const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 1 });
-    const sprite = new THREE.Sprite(mat);
+    if (this.effectPool.length > 0) {
+      sprite = this.effectPool.pop();
+      sprite.material = mat;
+      sprite.visible = true;
+    } else {
+      sprite = new THREE.Sprite(mat);
+      this.scene.add(sprite);
+    }
+
     sprite.position.copy(pos);
     sprite.position.y += 0.3;
     sprite.scale.set(0.6, 0.6, 0.6);
+    sprite.material.opacity = 1.0;
 
-    this.scene.add(sprite);
     this.floatingEffects.push({
       sprite,
       vy: 0.8,
@@ -128,7 +148,7 @@ export class FoodManager {
       }
     }
 
-    // 2. Update floating heart/coin effects
+    // 2. Update floating heart/coin effects (recycled into pool)
     for (let i = this.floatingEffects.length - 1; i >= 0; i--) {
       const eff = this.floatingEffects[i];
       eff.life -= delta;
@@ -137,9 +157,8 @@ export class FoodManager {
       eff.sprite.material.opacity = eff.opacity;
 
       if (eff.life <= 0) {
-        this.scene.remove(eff.sprite);
-        eff.sprite.material.map.dispose();
-        eff.sprite.material.dispose();
+        eff.sprite.visible = false;
+        this.effectPool.push(eff.sprite);
         this.floatingEffects.splice(i, 1);
       }
     }
@@ -148,6 +167,7 @@ export class FoodManager {
   getFoodAt(x, y, z, maxDist = 0.5) {
     for (let i = 0; i < this.foods.length; i++) {
       const f = this.foods[i];
+      if (f.life <= 0 || f.bitesLeft <= 0) continue;
       const dx = f.x - x;
       const dy = f.y - y;
       const dz = f.z - z;
@@ -160,6 +180,7 @@ export class FoodManager {
   }
 
   consume(foodItem, fishPos, fishId) {
+    if (!foodItem || foodItem.bitesLeft <= 0 || foodItem.life <= 0) return false;
     foodItem.bitesLeft--;
     this.createEatEffect(fishPos, "heart");
     this.audio.playEat();
@@ -171,6 +192,7 @@ export class FoodManager {
       // Shrink remaining flake
       foodItem.mesh.scale.multiplyScalar(0.7);
     }
+    return true;
   }
 
   destroy() {
@@ -178,9 +200,22 @@ export class FoodManager {
       this.rootGroup.remove(f.mesh);
     }
     this.foods = [];
+    for (const eff of this.floatingEffects) {
+      this.scene.remove(eff.sprite);
+    }
+    this.floatingEffects = [];
+    for (const s of this.effectPool) {
+      this.scene.remove(s);
+    }
+    this.effectPool = [];
+
     this.pelletGeom?.dispose();
     this.flakeGeom?.dispose();
     this.foodMat1?.dispose();
     this.foodMat2?.dispose();
+    this.heartMaterial?.dispose();
+    this.coinMaterial?.dispose();
+    this.heartTexture?.dispose();
+    this.coinTexture?.dispose();
   }
 }
