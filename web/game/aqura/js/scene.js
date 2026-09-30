@@ -107,6 +107,11 @@ export class AquariumScene {
     this.lastPointer = { x: 0, y: 0 };
     this.followTarget = null; // Target fish to follow
 
+    // Cinematic Underwater Drone Tour state
+    this.isCruiseMode = false;
+    this.cruiseProgress = 0.0;
+    this.activeTurbulences = [];
+
     this.initScene();
     this.initLighting();
     this.initTank();
@@ -119,6 +124,7 @@ export class AquariumScene {
     this.initAlgaeOverlay();
     this.initSedimentDustSystem();
     this.initPostProcessing();
+    this.initCinematicCruise();
     this.bindEvents();
   }
 
@@ -542,6 +548,20 @@ export class AquariumScene {
       b.x += Math.sin(time * b.wobbleSpeed + b.phase) * 0.015;
       b.z += Math.cos(time * b.wobbleSpeed + b.phase) * 0.015;
 
+      // Deflect bubbles caught in fluid turbulence wakes
+      for (const turb of this.activeTurbulences) {
+        const dx = b.x - turb.pos.x;
+        const dy = b.y - turb.pos.y;
+        const dz = b.z - turb.pos.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < 6.0) {
+          const force = (1.0 - Math.sqrt(d2) / 2.45) * turb.strength * delta * 2.5;
+          b.x += turb.dir.x * force + Math.sin(time * 6.0) * 0.02;
+          b.z += turb.dir.z * force + Math.cos(time * 6.0) * 0.02;
+          b.y += turb.dir.y * force * 0.5;
+        }
+      }
+
       b.mesh.position.set(b.x, b.y, b.z);
 
       // Pop when reaching water surface
@@ -549,6 +569,16 @@ export class AquariumScene {
         b.mesh.visible = false;
         this.bubblePool.push(b.mesh);
         this.bubbles.splice(i, 1);
+      }
+    }
+
+    // Decay active turbulence pulses
+    for (let tIdx = this.activeTurbulences.length - 1; tIdx >= 0; tIdx--) {
+      const turb = this.activeTurbulences[tIdx];
+      turb.life -= delta;
+      turb.strength *= (1.0 - delta * 1.5);
+      if (turb.life <= 0) {
+        this.activeTurbulences.splice(tIdx, 1);
       }
     }
   }
@@ -1066,51 +1096,111 @@ export class AquariumScene {
     return this.raycaster.intersectObjects(objects, true);
   }
 
+  initCinematicCruise() {
+    this.cruiseCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-3.5, -2.2, 2.0),   // 1. Skimming coral sand ripples and starfish
+      new THREE.Vector3(-2.2, -1.0, -0.6),  // 2. Rising beside Giant Sea Anemone & Clownfish
+      new THREE.Vector3(1.2, -0.4, -1.8),   // 3. Passing ancient amphora and brain coral
+      new THREE.Vector3(4.5, 1.6, -5.2),    // 4. Gliding alongside majestic Manta Ray
+      new THREE.Vector3(0.5, 0.2, -7.5),    // 5. Cruising beside Green Sea Turtle
+      new THREE.Vector3(-4.8, 1.2, -6.0),   // 6. Passing through 56-fish Chromis school
+      new THREE.Vector3(-1.5, 2.0, -1.2),   // 7. Looking up into shimmering sunbeams & Snell's window
+      new THREE.Vector3(0.0, -1.0, 4.2)     // 8. Gentle panoramic sweep back to central reef
+    ], true, "catmullrom", 0.35);
+
+    this.cruiseLookTarget = new THREE.Vector3();
+  }
+
+  toggleCinematicCruise(enable = null) {
+    this.isCruiseMode = (enable !== null) ? enable : !this.isCruiseMode;
+    if (!this.isCruiseMode) {
+      this.targetCameraAngleY = this.cameraAngleY;
+      this.targetCameraAngleX = 0.08;
+      this.targetCameraDistance = 6.8;
+      this.camera.rotation.z = 0;
+    }
+    return this.isCruiseMode;
+  }
+
+  addWaterTurbulence(worldPos, dir = null) {
+    if (!worldPos) return;
+    const pos = (worldPos && typeof worldPos.clone === "function")
+      ? worldPos.clone()
+      : new THREE.Vector3(worldPos.x || 0, worldPos.y || 0, worldPos.z || 0);
+    const turbDir = (dir && typeof dir.clone === "function")
+      ? dir.clone().normalize()
+      : (dir ? new THREE.Vector3(dir.x || 0, dir.y || 0.4, dir.z || 0).normalize() : new THREE.Vector3(0, 0.4, 0));
+    const turb = {
+      pos,
+      dir: turbDir,
+      strength: 1.0,
+      life: 1.2
+    };
+    this.activeTurbulences.push(turb);
+    this.spawnBubbleBurst(pos.x, pos.y, pos.z, 6);
+  }
+
   update(delta, time) {
     // 1. Camera interpolation
-    this.cameraAngleY = THREE.MathUtils.lerp(this.cameraAngleY, this.targetCameraAngleY, delta * 5);
-    this.cameraAngleX = THREE.MathUtils.lerp(this.cameraAngleX, this.targetCameraAngleX, delta * 5);
-    this.cameraDistance = THREE.MathUtils.lerp(this.cameraDistance, this.targetCameraDistance, delta * 5);
+    if (this.isCruiseMode && this.cruiseCurve) {
+      this.cruiseProgress = (this.cruiseProgress + delta * 0.024) % 1.0;
+      const cruisePos = this.cruiseCurve.getPoint(this.cruiseProgress);
+      const lookPos = this.cruiseCurve.getPoint((this.cruiseProgress + 0.06) % 1.0);
 
-    _vLookTarget.set(0, 0.2, 0);
+      this.camera.position.lerp(cruisePos, delta * 3.5);
+      _vLookTarget.lerp(lookPos, delta * 4.0);
+      this.camera.lookAt(_vLookTarget);
 
-    if (this.followTarget) {
-      if (!this.followTarget.parent) {
-        // Target mesh was removed from scene tree; auto-fallback to normal camera
-        this.followTarget = null;
-        this.followTargetFish = null;
-      } else {
-        _vLookTarget.copy(this.followTarget.position);
-        const isManta = this.followTargetFish && this.followTargetFish.isMantaRay;
-        const followDist = isManta ? 10.5 : 2.5;
-        const followHeight = isManta ? 2.8 : 0.40;
+      // Subtle aerodynamic banking roll into turns with smooth damping
+      const tangent = this.cruiseCurve.getTangent(this.cruiseProgress);
+      const targetRoll = Math.max(-0.25, Math.min(0.25, -tangent.x * 0.22));
+      this.camera.rotation.z = THREE.MathUtils.lerp(this.camera.rotation.z, targetRoll, delta * 3.5);
+    } else {
+      this.cameraAngleY = THREE.MathUtils.lerp(this.cameraAngleY, this.targetCameraAngleY, delta * 5);
+      this.cameraAngleX = THREE.MathUtils.lerp(this.cameraAngleX, this.targetCameraAngleX, delta * 5);
+      this.cameraDistance = THREE.MathUtils.lerp(this.cameraDistance, this.targetCameraDistance, delta * 5);
 
-        // Smooth chase camera that smoothly orbits near the target
-        const cx = _vLookTarget.x + Math.sin(this.cameraAngleY) * followDist;
-        const cy = _vLookTarget.y + followHeight + Math.sin(this.cameraAngleX) * (followDist * 0.45);
-        const cz = _vLookTarget.z + Math.cos(this.cameraAngleY) * followDist;
+      _vLookTarget.set(0, 0.2, 0);
 
-        _vChaseCamPos.set(cx, cy, cz);
-        this.camera.position.lerp(_vChaseCamPos, delta * 4.5);
+      if (this.followTarget) {
+        if (!this.followTarget.parent) {
+          // Target mesh was removed from scene tree; auto-fallback to normal camera
+          this.followTarget = null;
+          this.followTargetFish = null;
+        } else {
+          _vLookTarget.copy(this.followTarget.position);
+          const isManta = this.followTargetFish && this.followTargetFish.isMantaRay;
+          const isTurtle = this.followTargetFish && this.followTargetFish.isSeaTurtle;
+          const followDist = isManta ? 10.5 : (isTurtle ? 6.2 : 2.5);
+          const followHeight = isManta ? 2.8 : (isTurtle ? 1.4 : 0.40);
+
+          // Smooth chase camera that smoothly orbits near the target
+          const cx = _vLookTarget.x + Math.sin(this.cameraAngleY) * followDist;
+          const cy = _vLookTarget.y + followHeight + Math.sin(this.cameraAngleX) * (followDist * 0.45);
+          const cz = _vLookTarget.z + Math.cos(this.cameraAngleY) * followDist;
+
+          _vChaseCamPos.set(cx, cy, cz);
+          this.camera.position.lerp(_vChaseCamPos, delta * 4.5);
+        }
       }
+
+      if (!this.followTarget) {
+        const cx = Math.sin(this.cameraAngleY) * Math.cos(this.cameraAngleX) * this.cameraDistance;
+        const cy = Math.sin(this.cameraAngleX) * this.cameraDistance + 0.4;
+        const cz = Math.cos(this.cameraAngleY) * Math.cos(this.cameraAngleX) * this.cameraDistance;
+
+        // Diver Float Cam (multi-frequency neutral buoyancy drift simulating human diver breathing & currents)
+        const driftX = Math.sin(time * 0.35) * 0.22 + Math.cos(time * 0.15) * 0.10;
+        const driftY = Math.sin(time * 0.48) * 0.12 + Math.sin(time * 0.24) * 0.08;
+        const driftZ = Math.cos(time * 0.28) * 0.18;
+
+        this.camera.position.set(cx + driftX, cy + driftY, cz + driftZ);
+        _vLookTarget.x += driftX * 0.25;
+        _vLookTarget.y += driftY * 0.25;
+      }
+
+      this.camera.lookAt(_vLookTarget);
     }
-
-    if (!this.followTarget) {
-      const cx = Math.sin(this.cameraAngleY) * Math.cos(this.cameraAngleX) * this.cameraDistance;
-      const cy = Math.sin(this.cameraAngleX) * this.cameraDistance + 0.4;
-      const cz = Math.cos(this.cameraAngleY) * Math.cos(this.cameraAngleX) * this.cameraDistance;
-
-      // Diver Float Cam (multi-frequency neutral buoyancy drift simulating human diver breathing & currents)
-      const driftX = Math.sin(time * 0.35) * 0.22 + Math.cos(time * 0.15) * 0.10;
-      const driftY = Math.sin(time * 0.48) * 0.12 + Math.sin(time * 0.24) * 0.08;
-      const driftZ = Math.cos(time * 0.28) * 0.18;
-
-      this.camera.position.set(cx + driftX, cy + driftY, cz + driftZ);
-      _vLookTarget.x += driftX * 0.25;
-      _vLookTarget.y += driftY * 0.25;
-    }
-
-    this.camera.lookAt(_vLookTarget);
 
     // 2. Procedural Caustics animation & 3D ocean swells
     this.updateCaustics(time);
@@ -1132,6 +1222,10 @@ export class AquariumScene {
     }
 
     // 4. Render Scene with cinematic post-processing pipeline
+    this.render();
+  }
+
+  render() {
     if (this.composer) {
       this.composer.render();
     } else {

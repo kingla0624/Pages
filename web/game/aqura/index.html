@@ -59,7 +59,10 @@
       </div>
 
       <!-- Action Toggles -->
-      <div class="header-actions">
+        <button id="cruiseBtn" class="icon-btn" title="进入电影级自动巡航导览">
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="#c084fc"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4zM8 17H5v-2h3v2zm0-4H5v-2h3v2zm0-4H5V7h3v2zm6 8h-4v-6h4v6zm5 0h-3v-2h3v2zm0-4h-3v-2h3v2zm0-4h-3V7h3v2z"/></svg>
+          <span>巡航</span>
+        </button>
         <button id="photoBtn" class="icon-btn" title="进入摄影模式">
           <svg class="icon-svg" viewBox="0 0 24 24" fill="#e2e8f0"><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
           <span>拍照</span>
@@ -70,6 +73,11 @@
         </button>
       </div>
     </header>
+
+    <!-- Cruise Mode Hint banner -->
+    <div id="cruiseHint" class="cruise-hint-banner glass-panel is-hidden">
+      <span>🎬 电影级深海巡航导览中 · 点击屏幕任意处或按 ESC 退出</span>
+    </div>
 
     <!-- Floating Toast Notification Center -->
     <div id="toastContainer"></div>

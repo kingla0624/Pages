@@ -49,6 +49,8 @@ export class UIManager {
       photoControls: document.querySelector("#photoControls"),
       captureSnapshotBtn: document.querySelector("#captureSnapshotBtn"),
       photoExitBtn: document.querySelector("#photoExitBtn"),
+      cruiseBtn: document.querySelector("#cruiseBtn"),
+      cruiseHint: document.querySelector("#cruiseHint"),
       toastContainer: document.querySelector("#toastContainer")
     };
   }
@@ -152,6 +154,30 @@ export class UIManager {
       });
     }
 
+    // 5.1 Cruise Mode Toggle
+    if (this.dom.cruiseBtn) {
+      this.dom.cruiseBtn.addEventListener("click", () => {
+        this.toggleCruiseMode();
+      });
+    }
+
+    if (this.dom.cruiseHint) {
+      this.dom.cruiseHint.addEventListener("click", () => {
+        this.exitCruiseMode();
+      });
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        if (this.scene.isCruiseMode) {
+          this.exitCruiseMode();
+        }
+        if (this.isPhotoMode) {
+          this.exitPhotoMode();
+        }
+      }
+    });
+
     // 6. 3D Canvas Interactivity (Feed, Tap, Clean, Inspect)
     const canvasEl = this.dom.canvasContainer;
 
@@ -227,7 +253,32 @@ export class UIManager {
     }
   }
 
+  toggleCruiseMode() {
+    const isCruise = this.scene.toggleCinematicCruise();
+    if (isCruise) {
+      this.dom.hud.classList.add("cruise-mode");
+      if (this.dom.cruiseHint) this.dom.cruiseHint.classList.remove("is-hidden");
+      this.closeFishCard();
+      this.closeShop();
+      this.showToast("🎬 已进入电影级深海巡航导览模式");
+    } else {
+      this.exitCruiseMode();
+    }
+  }
+
+  exitCruiseMode() {
+    this.scene.toggleCinematicCruise(false);
+    this.dom.hud.classList.remove("cruise-mode");
+    if (this.dom.cruiseHint) this.dom.cruiseHint.classList.add("is-hidden");
+    this.showToast("已退出巡航导览，恢复自由潜行视角");
+  }
+
   handleCanvasInteraction(e) {
+    if (this.scene.isCruiseMode) {
+      this.exitCruiseMode();
+      return;
+    }
+
     const tool = this.state.data.activeTool;
 
     if (tool === "feed") {
@@ -241,6 +292,10 @@ export class UIManager {
       const hit = this.scene.getRaycastPoint(e.clientX, e.clientY, 0);
       const tapPos = hit || new THREE.Vector3(0, 0, this.scene.bounds.maxZ);
       this.fishManager.sendWavePulse(tapPos);
+      this.scene.addWaterTurbulence(tapPos);
+      if (this.decManager && this.decManager.triggerTouch) {
+        this.decManager.triggerTouch(tapPos.x, tapPos.z);
+      }
       this.showTapRipple(e.clientX, e.clientY);
     } else if (tool === "clean") {
       this.handleWipeCleaning(e);

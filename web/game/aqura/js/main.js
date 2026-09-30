@@ -21,6 +21,7 @@ class AquraGame {
     this.scene = new AquariumScene(this.container);
     this.food = new FoodManager(this.scene.scene, this.scene.bounds, this.audio, this.state);
     this.decorations = new DecorationManager(this.scene, this.scene.bounds, this.audio);
+    this.scene.decorations = this.decorations;
     this.fish = new FishManager(this.scene, this.scene.bounds, this.audio, this.food, this.state);
     this.ui = new UIManager(this.state, this.audio, this.scene, this.fish, this.food, this.decorations);
 
@@ -137,4 +138,5 @@ class AquraGame {
 // Boot game when DOM is ready
 window.addEventListener("DOMContentLoaded", () => {
   window.aquraGame = new AquraGame();
+  window.aqura = window.aquraGame;
 });

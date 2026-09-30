@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+const _vDecWorldPos = new THREE.Vector3();
+
 /**
  * Aqura Aquarium Aquascaping & Dynamic Decorations
  * Creates animated swaying aquatic plants, corals, bubbling air stone, and animated treasure chest.
@@ -16,6 +18,7 @@ export class DecorationManager {
 
     this.animatedDecorations = [];
     this.bubbleEmitters = [];
+    this.anemones = [];
   }
 
   clear() {
@@ -26,6 +29,7 @@ export class DecorationManager {
     }
     this.animatedDecorations = [];
     this.bubbleEmitters = [];
+    this.anemones = [];
   }
 
   isSharedTexture(tex) {
@@ -92,6 +96,9 @@ export class DecorationManager {
         break;
       case "seastar":
         obj = this.createSeaStar();
+        break;
+      case "giant_anemone":
+        obj = this.createGiantAnemone(dec);
         break;
       default:
         obj = this.createSeaweedCluster();
@@ -1003,6 +1010,159 @@ export class DecorationManager {
     return group;
   }
 
+  createGiantAnemone(dec = {}) {
+    const group = new THREE.Group();
+
+    // 1. Columnar Fleshy Body (Fleshy pedal disc with natural biological wrinkles)
+    const baseMat = new THREE.MeshStandardMaterial({
+      color: 0x9f1239, // Deep burgundy rose base
+      roughness: 0.55,
+      metalness: 0.05
+    });
+    const columnGeom = new THREE.CylinderGeometry(0.38, 0.48, 0.45, 16);
+    const cPos = columnGeom.attributes.position;
+    for (let i = 0; i < cPos.count; i++) {
+      const y = cPos.getY(i);
+      const angle = Math.atan2(cPos.getZ(i), cPos.getX(i));
+      const wrinkle = Math.sin(y * 24 + angle * 4) * 0.018;
+      cPos.setX(i, cPos.getX(i) + wrinkle * Math.cos(angle));
+      cPos.setZ(i, cPos.getZ(i) + wrinkle * Math.sin(angle));
+    }
+    columnGeom.computeVertexNormals();
+    const column = new THREE.Mesh(columnGeom, baseMat);
+    column.position.y = 0.225;
+    group.add(column);
+
+    // 2. Oral Disc (Top rim)
+    const discGeom = new THREE.CylinderGeometry(0.42, 0.38, 0.08, 18);
+    const discMat = new THREE.MeshStandardMaterial({
+      color: 0xbe185d,
+      roughness: 0.40,
+      metalness: 0.08
+    });
+    const disc = new THREE.Mesh(discGeom, discMat);
+    disc.position.y = 0.46;
+    group.add(disc);
+
+    // Central mouth slit
+    const mouthGeom = new THREE.RingGeometry(0.02, 0.06, 12);
+    mouthGeom.rotateX(-Math.PI / 2);
+    const mouthMat = new THREE.MeshBasicMaterial({ color: 0x4c0519 });
+    const mouth = new THREE.Mesh(mouthGeom, mouthMat);
+    mouth.position.y = 0.505;
+    group.add(mouth);
+
+    // 3. Fluorescent Translucent Tentacles
+    // 3 concentric rings: inner (10), mid (16), outer (20) = 46 tentacles
+    const tentacleMat = new THREE.MeshPhysicalMaterial({
+      color: 0x10b981, // Vibrant emerald-cyan
+      emissive: 0x059669,
+      emissiveIntensity: 0.42,
+      roughness: 0.22,
+      metalness: 0.02,
+      clearcoat: 0.85,
+      clearcoatRoughness: 0.08,
+      transmission: 0.65,
+      thickness: 0.08,
+      transparent: true,
+      opacity: 0.94
+    });
+
+    const tipMat = new THREE.MeshStandardMaterial({
+      color: 0xf43f5e, // Rosy violet tips
+      emissive: 0xe11d48,
+      emissiveIntensity: 0.65,
+      roughness: 0.18
+    });
+
+    const rings = [
+      { count: 10, radius: 0.12, height: 0.55, tilt: 0.15, thickness: 0.038 },
+      { count: 16, radius: 0.24, height: 0.68, tilt: 0.38, thickness: 0.034 },
+      { count: 20, radius: 0.36, height: 0.76, tilt: 0.62, thickness: 0.030 }
+    ];
+
+    const tentacleRecords = [];
+
+    rings.forEach((ring, ringIdx) => {
+      for (let i = 0; i < ring.count; i++) {
+        const angle = (i / ring.count) * Math.PI * 2 + (ringIdx * 0.25) + (Math.random() - 0.5) * 0.1;
+        const posX = Math.cos(angle) * ring.radius;
+        const posZ = Math.sin(angle) * ring.radius;
+
+        const tPivot = new THREE.Group();
+        tPivot.position.set(posX, 0.48, posZ);
+
+        // Radial outward tilt
+        const outwardTilt = ring.tilt + (Math.random() - 0.5) * 0.1;
+        tPivot.rotation.y = -angle + Math.PI / 2;
+        tPivot.rotation.z = outwardTilt;
+
+        // Curved tapered tentacle stalk
+        const tLen = ring.height * (0.85 + Math.random() * 0.3);
+        const tGeom = new THREE.CylinderGeometry(ring.thickness * 0.5, ring.thickness, tLen, 8, 4);
+        tGeom.translate(0, tLen / 2, 0);
+
+        const tMesh = new THREE.Mesh(tGeom, tentacleMat);
+        tPivot.add(tMesh);
+
+        // Bulbous luminous tip
+        const tipGeom = new THREE.SphereGeometry(ring.thickness * 0.9, 10, 8);
+        const tipMesh = new THREE.Mesh(tipGeom, tipMat);
+        tipMesh.position.y = tLen;
+        tPivot.add(tipMesh);
+
+        group.add(tPivot);
+
+        tentacleRecords.push({
+          pivot: tPivot,
+          baseTilt: outwardTilt,
+          baseRotY: -angle + Math.PI / 2,
+          length: tLen,
+          speed: 1.2 + Math.random() * 0.6,
+          phase: Math.random() * Math.PI * 2,
+          radialDist: ring.radius
+        });
+      }
+    });
+
+    const anemoneData = {
+      group,
+      tentacles: tentacleRecords,
+      touchedTimer: 0,
+      contractFactor: 0.0,
+      worldPos: new THREE.Vector3(dec.x || 0, (this.bounds?.minY || -3.0) + (dec.yOffset || 0), dec.z || 0)
+    };
+
+    this.anemones.push(anemoneData);
+    this.animatedDecorations.push({
+      type: "giant_anemone",
+      data: anemoneData
+    });
+
+    return group;
+  }
+
+  triggerTouch(worldX, worldZ, radius = 1.4) {
+    for (const anemone of this.anemones) {
+      const dx = anemone.worldPos.x - worldX;
+      const dz = anemone.worldPos.z - worldZ;
+      if (dx * dx + dz * dz < radius * radius) {
+        anemone.touchedTimer = 2.5; // Retract for 2.5 seconds
+      }
+    }
+  }
+
+  reactToTurbulence(turbPos, turbDir) {
+    if (!turbPos) return;
+    for (const anemone of this.anemones) {
+      const dx = anemone.worldPos.x - turbPos.x;
+      const dz = anemone.worldPos.z - turbPos.z;
+      if (dx * dx + dz * dz < 6.0) {
+        anemone.touchedTimer = 2.0;
+      }
+    }
+  }
+
   update(delta, time, bubbleSystem) {
     // 1. Update seaweed fluid travelling wave & anemone tentacles
     for (const item of this.animatedDecorations) {
@@ -1033,6 +1193,41 @@ export class DecorationManager {
           t.mesh.rotation.z = t.baseRotZ + Math.sin(time * 1.4 + t.phase) * 0.16;
           t.mesh.rotation.x = t.baseRotX + Math.cos(time * 1.2 + t.phase) * 0.16;
         }
+      } else if (item.type === "giant_anemone") {
+        const anemone = item.data;
+        if (anemone.group.parent) {
+          anemone.group.getWorldPosition(anemone.worldPos);
+        }
+
+        // Handle touch retraction timer
+        if (anemone.touchedTimer > 0) {
+          anemone.touchedTimer = Math.max(0, anemone.touchedTimer - delta);
+          anemone.contractFactor = THREE.MathUtils.lerp(anemone.contractFactor, 1.0, delta * 6.0);
+          if (bubbleSystem && Math.random() < 0.25) {
+            bubbleSystem.spawnBubble(
+              anemone.worldPos.x + (Math.random() - 0.5) * 0.4,
+              anemone.worldPos.y + 0.5,
+              anemone.worldPos.z + (Math.random() - 0.5) * 0.4,
+              0.025 + Math.random() * 0.03
+            );
+          }
+        } else {
+          anemone.contractFactor = THREE.MathUtils.lerp(anemone.contractFactor, 0.0, delta * 1.5);
+        }
+
+        const pulseScale = 1.0 - anemone.contractFactor * 0.45;
+        const breath = Math.sin(time * 0.8) * 0.05;
+
+        for (const t of anemone.tentacles) {
+          const swayZ = Math.sin(time * t.speed + t.phase) * (0.16 * (1.0 - anemone.contractFactor * 0.6));
+          const swayX = Math.cos(time * t.speed * 0.85 + t.phase) * (0.14 * (1.0 - anemone.contractFactor * 0.6));
+          // When contracted, tentacles curl tightly inwards toward center
+          const curlInward = anemone.contractFactor * (-t.baseTilt * 0.85);
+
+          t.pivot.rotation.z = t.baseTilt * pulseScale + swayZ + curlInward;
+          t.pivot.rotation.x = swayX;
+          t.pivot.scale.set(1.0, pulseScale + breath, 1.0);
+        }
       } else if (item.type === "seafan") {
         // Organic sea fan swaying with oceanic current
         item.mesh.rotation.z = item.baseRotZ + Math.sin(time * 1.3 + item.phase) * 0.06;
@@ -1050,12 +1245,11 @@ export class DecorationManager {
           item.lidPivot.rotation.x = THREE.MathUtils.lerp(item.lidPivot.rotation.x, -Math.PI * 0.45, delta * 4);
           // Release bubbles while open
           if (bubbleSystem && Math.random() < 0.35) {
-            const chestWorldPos = new THREE.Vector3();
-            item.group.getWorldPosition(chestWorldPos);
+            item.group.getWorldPosition(_vDecWorldPos);
             bubbleSystem.spawnBubble(
-              chestWorldPos.x + (Math.random() - 0.5) * 0.4,
-              chestWorldPos.y + 0.45,
-              chestWorldPos.z + (Math.random() - 0.5) * 0.3,
+              _vDecWorldPos.x + (Math.random() - 0.5) * 0.4,
+              _vDecWorldPos.y + 0.45,
+              _vDecWorldPos.z + (Math.random() - 0.5) * 0.3,
               0.05 + Math.random() * 0.05
             );
           }
@@ -1072,13 +1266,12 @@ export class DecorationManager {
         emitter.accum += delta * emitter.rate;
         while (emitter.accum >= 1) {
           emitter.accum -= 1;
-          const stoneWorld = new THREE.Vector3();
-          emitter.parentGroup.getWorldPosition(stoneWorld);
+          emitter.parentGroup.getWorldPosition(_vDecWorldPos);
           
-          const rx = stoneWorld.x + (Math.random() - 0.5) * 0.3;
-          const rz = stoneWorld.z + (Math.random() - 0.5) * 0.3;
+          const rx = _vDecWorldPos.x + (Math.random() - 0.5) * 0.3;
+          const rz = _vDecWorldPos.z + (Math.random() - 0.5) * 0.3;
           const rad = emitter.minRadius + Math.random() * (emitter.maxRadius - emitter.minRadius);
-          bubbleSystem.spawnBubble(rx, stoneWorld.y + 0.25, rz, rad);
+          bubbleSystem.spawnBubble(rx, _vDecWorldPos.y + 0.25, rz, rad);
         }
       }
     }

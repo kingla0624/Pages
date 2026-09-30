@@ -68,6 +68,15 @@ export const FISH_CATALOG = {
     size: 2.5,
     rarity: "传奇",
     colors: { body: 0x0f172a, stripe: 0xf8fafc, fin: 0x38bdf8 }
+  },
+  sea_turtle: {
+    name: "绿海龟 (Green Sea Turtle)",
+    price: 320,
+    desc: "优雅的海洋长寿智者，双前鳍如羽翼般在碧海中振翅翱翔，偶尔浮上海面呼吸换气。",
+    speed: 0.85,
+    size: 2.2,
+    rarity: "神话",
+    colors: { body: 0x2e4a3d, stripe: 0x86efac, fin: 0x1e3a2f }
   }
 };
 
@@ -113,6 +122,12 @@ export const DECORATION_CATALOG = {
     price: 75,
     desc: "沉睡水底的古老断柱遗迹，长满苔藓与贝壳。",
     type: "ruin"
+  },
+  giant_anemone: {
+    name: "荧光共生巨海葵",
+    price: 65,
+    desc: "长满柔软飘逸触手的活体海葵，散发微光，是小丑鱼梦寐以求的温暖避风港。",
+    type: "giant_anemone"
   }
 };
 
@@ -180,10 +195,32 @@ export class GameState {
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.fishes) && parsed.fishes.length > 0) {
           const defaults = this.getDefaultData();
+          let loadedDecorations = Array.isArray(parsed.decorations) ? parsed.decorations : defaults.decorations;
+          if (!loadedDecorations.some(d => d.type === "giant_anemone")) {
+            loadedDecorations = [
+              { id: "dec_anemone_1", type: "giant_anemone", x: -2.3, z: -1.4, scale: 1.05 },
+              ...loadedDecorations
+            ];
+          }
+          let loadedFishes = parsed.fishes;
+          if (!loadedFishes.some(f => f.type === "sea_turtle")) {
+            loadedFishes = [
+              ...loadedFishes,
+              {
+                id: "fish_turtle_1",
+                type: "sea_turtle",
+                name: "莫图 (Crush)",
+                hunger: 90,
+                happiness: 95,
+                bornAt: Date.now() - 500000
+              }
+            ];
+          }
           return {
             ...defaults,
             ...parsed,
-            decorations: Array.isArray(parsed.decorations) ? parsed.decorations : defaults.decorations,
+            decorations: loadedDecorations,
+            fishes: loadedFishes,
             stats: { ...defaults.stats, ...(parsed.stats || {}) }
           };
         }
@@ -207,6 +244,7 @@ export class GameState {
         playSeconds: 0
       },
       decorations: [
+        { id: "dec_anemone_1", type: "giant_anemone", x: -2.3, z: -1.4, scale: 1.05 },
         { id: "dec_1", type: "coral_reef", x: -2.8, z: -1.6, scale: 1.05 },
         { id: "dec_2", type: "seaweed_cluster", x: 4.2, z: -1.0 },
         { id: "dec_3", type: "amphora", x: 1.2, z: -1.8, rotY: 0.6 },
@@ -242,6 +280,14 @@ export class GameState {
           hunger: 85,
           happiness: 95,
           bornAt: Date.now() - 30000
+        },
+        {
+          id: "fish_turtle_1",
+          type: "sea_turtle",
+          name: "莫图 (Crush)",
+          hunger: 90,
+          happiness: 95,
+          bornAt: Date.now() - 500000
         }
       ]
     };
@@ -305,8 +351,8 @@ export class GameState {
     if (!info) return null;
     if (!this.spendCoins(info.price)) return null;
 
-    const x = (Math.random() * 14 - 7);
-    const z = (Math.random() * 4.5 - 2.25);
+    const x = (Math.random() * 16 - 8);
+    const z = -1.2 - Math.random() * 5.0;
     const newDec = {
       id: "dec_" + Date.now(),
       type,

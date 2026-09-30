@@ -94,14 +94,22 @@ export class FoodManager {
   }
 
   createEatEffect(pos, type = "heart") {
-    const mat = type === "heart" ? this.heartMaterial : this.coinMaterial;
+    const baseTex = type === "heart" ? this.heartTexture : this.coinTexture;
     let sprite;
 
     if (this.effectPool.length > 0) {
       sprite = this.effectPool.pop();
-      sprite.material = mat;
+      sprite.material.map = baseTex;
+      sprite.material.opacity = 1.0;
+      sprite.material.needsUpdate = true;
       sprite.visible = true;
     } else {
+      const mat = new THREE.SpriteMaterial({
+        map: baseTex,
+        transparent: true,
+        opacity: 1.0,
+        depthWrite: false
+      });
       sprite = new THREE.Sprite(mat);
       this.scene.add(sprite);
     }

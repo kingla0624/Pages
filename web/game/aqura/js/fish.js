@@ -7,6 +7,7 @@ const _vSteer = new THREE.Vector3();
 const _vSepForce = new THREE.Vector3();
 const _vDiff = new THREE.Vector3();
 const _vLookTarget = new THREE.Vector3();
+const _vSchoolHeading = new THREE.Vector3();
 
 /**
  * Aqura Fish AI & Procedural 3D Creature Engine
@@ -28,6 +29,11 @@ export class FishManager {
 
     this.fishList = []; // Active 3D fish instances
     this.selectedFish = null;
+
+    // Shared procedural texture caches
+    this.skinTextures = {};
+    this.sharedTurtleTex = null;
+    this.sharedMantaTex = null;
 
     // Distant schooling reef fish boids (Chromis viridis)
     this.initDistantSchool();
@@ -169,7 +175,7 @@ export class FishManager {
     const nextZ = -14.0 + Math.sin(nextT * 2) * 6.5;
     const nextY = 1.2 + Math.sin(nextT * 1.5) * 1.4;
 
-    const heading = new THREE.Vector3(nextX - centerX, nextY - centerY, nextZ - centerZ).normalize();
+    const heading = _vSchoolHeading.set(nextX - centerX, nextY - centerY, nextZ - centerZ).normalize();
 
     for (let i = 0; i < count; i++) {
       const m = this.schoolMembers[i];
@@ -216,6 +222,13 @@ export class FishManager {
     const isSharedTexture = (tex) => {
       if (!tex) return false;
       if (tex === this.oralArmTexture) return true;
+      if (tex === this.sharedTurtleTex) return true;
+      if (this.sharedMantaTex && (tex === this.sharedMantaTex.map || tex === this.sharedMantaTex.bumpMap)) return true;
+      if (this.skinTextures) {
+        for (const k in this.skinTextures) {
+          if (this.skinTextures[k].map === tex || this.skinTextures[k].bumpMap === tex) return true;
+        }
+      }
       if (this.irisTextures) {
         for (const k in this.irisTextures) {
           if (this.irisTextures[k] === tex) return true;
@@ -260,6 +273,10 @@ export class FishManager {
       x = -2.5 + (Math.random() - 0.5) * 6.0;
       y = this.bounds.minY + 0.8 + Math.random() * 2.2;
       z = -2.5 + (Math.random() - 0.5) * 4.0;
+    } else if (fishData.type === "sea_turtle") {
+      x = (Math.random() - 0.5) * 18.0;
+      y = this.bounds.minY + 1.8 + Math.random() * 2.0;
+      z = -6.0 + (Math.random() - 0.5) * 8.0;
     } else {
       x = (Math.random() - 0.5) * 16.0;
       y = this.bounds.minY + 1.0 + Math.random() * 3.5;
@@ -295,6 +312,7 @@ export class FishManager {
       phaseOffset: Math.random() * Math.PI * 2,
       isJellyfish: fishData.type === "jellyfish",
       isMantaRay: fishData.type === "manta_ray",
+      isSeaTurtle: fishData.type === "sea_turtle",
       isAmbient: !!fishData.isAmbient
     };
 
@@ -386,11 +404,22 @@ export class FishManager {
       if (prev) prev(shader, renderer);
       shader.uniforms.uSheenCol = { value: new THREE.Color(sheenHex) };
       shader.uniforms.uSubsurfaceCol = { value: new THREE.Color(sssHex) };
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <common>",
+        `#include <common>
+         varying vec3 vViewSpineAxis;`
+      );
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
+         vViewSpineAxis = normalize(normalMatrix * vec3(1.0, 0.0, 0.0));`
+      );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <common>",
         `#include <common>
          uniform vec3 uSheenCol;
-         uniform vec3 uSubsurfaceCol;`
+         uniform vec3 uSubsurfaceCol;
+         varying vec3 vViewSpineAxis;`
       );
       shader.fragmentShader = shader.fragmentShader.replace(
         "#include <dithering_fragment>",
@@ -409,8 +438,8 @@ export class FishManager {
          float fres = 1.0 - max(dot(safeNormal, vDir), 0.0);
          vec3 thinFilmColor = 0.5 + 0.5 * cos(6.28318 * (vec3(0.18, 0.50, 0.85) * fres + vec3(0.0, 0.33, 0.67)));
 
-         // 3. Wet Mucus Glycoprotein Sheen (Longitudinal Anisotropic Reflection along fish spine)
-         vec3 spineAxis = vec3(1.0, 0.0, 0.0);
+         // 3. Wet Mucus Glycoprotein Sheen (Longitudinal Anisotropic Reflection along dynamically transformed spine)
+         vec3 spineAxis = length(vViewSpineAxis) > 0.01 ? normalize(vViewSpineAxis) : vec3(1.0, 0.0, 0.0);
          vec3 hDir = normalize(lDir + vDir);
          float anisoDot = dot(cross(safeNormal, spineAxis), hDir);
          float anisoSpec = pow(clamp(sqrt(max(0.0, 1.0 - anisoDot * anisoDot)), 0.0, 1.0), 28.0);
@@ -433,6 +462,9 @@ export class FishManager {
     }
     if (type === "jellyfish") {
       return this.buildJellyfishMesh(config);
+    }
+    if (type === "sea_turtle") {
+      return this.buildSeaTurtleMesh(config);
     }
     return this.buildFishMesh(type, config);
   }
@@ -1327,6 +1359,9 @@ export class FishManager {
   }
 
   createFishTexture(type, config) {
+    if (this.skinTextures && this.skinTextures[type]) {
+      return this.skinTextures[type];
+    }
     const w = 1024;
     const h = 512;
     const canvas = document.createElement("canvas");
@@ -1528,7 +1563,10 @@ export class FishManager {
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     const bumpTex = new THREE.CanvasTexture(bCanvas);
-    return { map: tex, bumpMap: bumpTex };
+    const result = { map: tex, bumpMap: bumpTex };
+    if (!this.skinTextures) this.skinTextures = {};
+    this.skinTextures[type] = result;
+    return result;
   }
 
   buildJellyfishMesh(config) {
@@ -2007,7 +2045,10 @@ export class FishManager {
     geom.setIndex(indices);
     geom.computeVertexNormals();
 
-    const { map, bumpMap } = this.createMantaRayTexture();
+    if (!this.sharedMantaTex) {
+      this.sharedMantaTex = this.createMantaRayTexture();
+    }
+    const { map, bumpMap } = this.sharedMantaTex;
     const mat = new THREE.MeshPhysicalMaterial({
       map,
       bumpMap,
@@ -2112,6 +2153,290 @@ export class FishManager {
     return { group, parts };
   }
 
+  createSeaTurtleTexture() {
+    const w = 1024;
+    const h = 1024;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+
+    // 1. Top half (0..512): Dorsal Carapace Shell (Deep olive-green with radiant amber scute mosaics)
+    const cGrad = ctx.createLinearGradient(0, 0, 0, 512);
+    cGrad.addColorStop(0.0, "#192e20");
+    cGrad.addColorStop(0.5, "#25442f");
+    cGrad.addColorStop(1.0, "#1e3726");
+    ctx.fillStyle = cGrad;
+    ctx.fillRect(0, 0, w, 512);
+
+    // Keratin micro-texture
+    ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+    for (let i = 0; i < 6000; i++) {
+      ctx.fillRect(Math.random() * w, Math.random() * 512, 1.5, 1.5);
+    }
+
+    // Scute plates: Vertebral center scutes and radiating costal lateral scutes
+    const scuteCenters = [
+      { x: 512, y: 100, rx: 65, ry: 50 },
+      { x: 512, y: 200, rx: 75, ry: 60 },
+      { x: 512, y: 310, rx: 80, ry: 65 },
+      { x: 512, y: 420, rx: 70, ry: 55 },
+      // Left costals
+      { x: 380, y: 150, rx: 70, ry: 55 },
+      { x: 350, y: 260, rx: 80, ry: 65 },
+      { x: 370, y: 380, rx: 75, ry: 60 },
+      // Right costals
+      { x: 644, y: 150, rx: 70, ry: 55 },
+      { x: 674, y: 260, rx: 80, ry: 65 },
+      { x: 654, y: 380, rx: 75, ry: 60 }
+    ];
+
+    for (const sc of scuteCenters) {
+      // Golden radiating streaks from scute nucleus
+      const sGrad = ctx.createRadialGradient(sc.x, sc.y, 5, sc.x, sc.y, sc.rx);
+      sGrad.addColorStop(0.0, "rgba(245, 158, 11, 0.75)");
+      sGrad.addColorStop(0.4, "rgba(217, 119, 6, 0.55)");
+      sGrad.addColorStop(0.8, "rgba(77, 124, 15, 0.35)");
+      sGrad.addColorStop(1.0, "rgba(20, 36, 25, 0.95)");
+
+      ctx.fillStyle = sGrad;
+      ctx.beginPath();
+      ctx.ellipse(sc.x, sc.y, sc.rx, sc.ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Radiating sunburst keratin rays
+      ctx.strokeStyle = "rgba(251, 191, 36, 0.45)";
+      ctx.lineWidth = 1.8;
+      for (let a = 0; a < Math.PI * 2; a += 0.32) {
+        ctx.beginPath();
+        ctx.moveTo(sc.x + Math.cos(a) * 8, sc.y + Math.sin(a) * 6);
+        ctx.lineTo(sc.x + Math.cos(a) * sc.rx * 0.95, sc.y + Math.sin(a) * sc.ry * 0.95);
+        ctx.stroke();
+      }
+
+      // Pale ivory growth suture margin ring
+      ctx.strokeStyle = "rgba(254, 243, 199, 0.85)";
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.ellipse(sc.x, sc.y, sc.rx * 0.98, sc.ry * 0.98, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // 2. Bottom half (512..1024): Ventral Plastron & Reptilian Skin
+    const pGrad = ctx.createLinearGradient(0, 512, 0, 1024);
+    pGrad.addColorStop(0.0, "#fef3c7");
+    pGrad.addColorStop(0.5, "#fde68a");
+    pGrad.addColorStop(1.0, "#fcd34d");
+    ctx.fillStyle = pGrad;
+    ctx.fillRect(0, 512, w, 512);
+
+    // Dark olive-black polygonal head/flipper reptilian mosaic scales
+    ctx.fillStyle = "#1e3a2f";
+    ctx.strokeStyle = "rgba(254, 243, 199, 0.70)";
+    ctx.lineWidth = 1.2;
+
+    for (let r = 560; r < 1000; r += 26) {
+      for (let c = 50; c < 970; c += 28) {
+        if (Math.random() > 0.15) {
+          const ox = (Math.random() - 0.5) * 6;
+          const oy = (Math.random() - 0.5) * 6;
+          ctx.beginPath();
+          ctx.ellipse(c + ox, r + oy, 10, 8, Math.random() * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  buildSeaTurtleMesh(config) {
+    const group = new THREE.Group();
+    const model = new THREE.Group();
+    group.add(model);
+    const scale = (config.size || 2.2) * 0.7; // Normalized scale
+    const parts = { model };
+
+    if (!this.sharedTurtleTex) {
+      this.sharedTurtleTex = this.createSeaTurtleTexture();
+    }
+    const turtleTex = this.sharedTurtleTex;
+    const turtleMat = new THREE.MeshPhysicalMaterial({
+      map: turtleTex,
+      roughness: 0.35,
+      metalness: 0.05,
+      clearcoat: 0.55,
+      clearcoatRoughness: 0.15
+    });
+
+    if (this.world?.injectCaustics) {
+      this.world.injectCaustics(turtleMat, 0.38);
+    }
+
+    // 1. Carapace (Domed teardrop hydrodynamic shell)
+    const carapaceGeom = new THREE.SphereGeometry(1.0 * scale, 24, 20, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    carapaceGeom.scale(0.85, 0.38, 1.25);
+    const cPos = carapaceGeom.attributes.position;
+    for (let i = 0; i < cPos.count; i++) {
+      const z = cPos.getZ(i);
+      // Teardrop taper towards rear (negative Z)
+      const taper = 1.0 - (z < 0 ? (-z / (1.25 * scale)) * 0.35 : 0);
+      cPos.setX(i, cPos.getX(i) * taper);
+    }
+    carapaceGeom.computeVertexNormals();
+
+    const carapaceMesh = new THREE.Mesh(carapaceGeom, turtleMat);
+    carapaceMesh.position.set(0, 0.05 * scale, 0);
+    model.add(carapaceMesh);
+    parts.carapace = carapaceMesh;
+
+    // Marginal scute rim (outer lip)
+    const rimGeom = new THREE.TorusGeometry(0.92 * scale, 0.045 * scale, 8, 28);
+    rimGeom.scale(0.82, 0.25, 1.22);
+    rimGeom.rotateX(Math.PI / 2);
+    const rimMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.45 });
+    const rimMesh = new THREE.Mesh(rimGeom, rimMat);
+    rimMesh.position.set(0, 0.04 * scale, 0);
+    model.add(rimMesh);
+
+    // 2. Plastron (Ventral ivory breastplate)
+    const plastronGeom = new THREE.SphereGeometry(0.88 * scale, 20, 14, 0, Math.PI * 2, Math.PI * 0.48, Math.PI * 0.52);
+    plastronGeom.scale(0.78, 0.18, 1.15);
+    const plastronMat = new THREE.MeshStandardMaterial({
+      color: 0xfef08a,
+      roughness: 0.40,
+      metalness: 0.02
+    });
+    const plastronMesh = new THREE.Mesh(plastronGeom, plastronMat);
+    plastronMesh.position.set(0, -0.02 * scale, 0);
+    model.add(plastronMesh);
+
+    // 3. Articulated Neck and Head
+    const neckPivot = new THREE.Group();
+    neckPivot.position.set(0, 0.02 * scale, 1.15 * scale);
+    model.add(neckPivot);
+    parts.neck = neckPivot;
+
+    // Fleshy neck cylinder
+    const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.18 * scale, 0.24 * scale, 0.35 * scale, 12), turtleMat);
+    neckMesh.rotation.x = Math.PI / 2;
+    neckMesh.position.set(0, 0, 0.15 * scale);
+    neckPivot.add(neckMesh);
+
+    // Streamlined reptilian head
+    const headGeom = new THREE.SphereGeometry(0.24 * scale, 16, 14);
+    headGeom.scale(0.85, 0.75, 1.28);
+    const headMesh = new THREE.Mesh(headGeom, turtleMat);
+    headMesh.position.set(0, 0.02 * scale, 0.42 * scale);
+    neckPivot.add(headMesh);
+    parts.head = headMesh;
+
+    // Beak mouth (slight hook)
+    const beakGeom = new THREE.ConeGeometry(0.12 * scale, 0.18 * scale, 8);
+    beakGeom.rotateX(Math.PI / 2);
+    const beakMat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.35 });
+    const beakMesh = new THREE.Mesh(beakGeom, beakMat);
+    beakMesh.position.set(0, -0.04 * scale, 0.70 * scale);
+    neckPivot.add(beakMesh);
+
+    // Reptilian Dark Eyes
+    [-1, 1].forEach(side => {
+      const eyeGeom = new THREE.SphereGeometry(0.045 * scale, 12, 10);
+      const eyeMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.05, metalness: 0.3 });
+      const eye = new THREE.Mesh(eyeGeom, eyeMat);
+      eye.position.set(side * 0.16 * scale, 0.08 * scale, 0.46 * scale);
+      neckPivot.add(eye);
+
+      // Glass cornea highlight
+      const corGeom = new THREE.SphereGeometry(0.048 * scale, 12, 8);
+      const corMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, transmission: 0.92, transparent: true, opacity: 0.95 });
+      const cor = new THREE.Mesh(corGeom, corMat);
+      cor.position.copy(eye.position);
+      neckPivot.add(cor);
+    });
+
+    // 4. Fore-Flippers (Large aerodynamic hydrofoil wings)
+    // Left shoulder pivot & right shoulder pivot
+    const flippers = [];
+    [-1, 1].forEach(side => {
+      const shoulderPivot = new THREE.Group();
+      shoulderPivot.position.set(side * 0.72 * scale, 0.01 * scale, 0.65 * scale);
+      model.add(shoulderPivot);
+
+      // Curved Hydrofoil Wing Mesh
+      const wingShape = new THREE.Shape();
+      wingShape.moveTo(0, 0);
+      wingShape.bezierCurveTo(side * 0.4 * scale, 0, side * 0.9 * scale, -0.2 * scale, side * 1.35 * scale, -0.65 * scale);
+      wingShape.bezierCurveTo(side * 1.1 * scale, -0.75 * scale, side * 0.6 * scale, -0.55 * scale, 0, -0.32 * scale);
+      wingShape.closePath();
+
+      const wingGeom = new THREE.ShapeGeometry(wingShape);
+      wingGeom.rotateX(-Math.PI / 2);
+      const wingMesh = new THREE.Mesh(wingGeom, turtleMat);
+      shoulderPivot.add(wingMesh);
+
+      flippers.push({ pivot: shoulderPivot, side, mesh: wingMesh });
+    });
+    parts.flippers = flippers;
+
+    // 5. Rear Flippers (Rudder steering paddles)
+    const rearFlippers = [];
+    [-1, 1].forEach(side => {
+      const rPivot = new THREE.Group();
+      rPivot.position.set(side * 0.48 * scale, -0.02 * scale, -1.05 * scale);
+      model.add(rPivot);
+
+      const rShape = new THREE.Shape();
+      rShape.moveTo(0, 0);
+      rShape.quadraticCurveTo(side * 0.28 * scale, -0.15 * scale, side * 0.38 * scale, -0.55 * scale);
+      rShape.quadraticCurveTo(side * 0.12 * scale, -0.60 * scale, 0, -0.42 * scale);
+      rShape.closePath();
+
+      const rGeom = new THREE.ShapeGeometry(rShape);
+      rGeom.rotateX(-Math.PI / 2);
+      const rMesh = new THREE.Mesh(rGeom, turtleMat);
+      rPivot.add(rMesh);
+
+      rearFlippers.push({ pivot: rPivot, side });
+    });
+    parts.rearFlippers = rearFlippers;
+
+    // 6. Pointed Short Tail
+    const tailGeom = new THREE.ConeGeometry(0.08 * scale, 0.32 * scale, 8);
+    tailGeom.rotateX(-Math.PI / 2);
+    const tailMesh = new THREE.Mesh(tailGeom, turtleMat);
+    tailMesh.position.set(0, -0.04 * scale, -1.25 * scale);
+    model.add(tailMesh);
+
+    return { group, parts };
+  }
+
+  reactToTurbulence(turbPos, turbDir) {
+    if (!turbPos) return;
+    const tPos = (turbPos && typeof turbPos.clone === "function")
+      ? turbPos
+      : _vLookTarget.set(turbPos.x || 0, turbPos.y || 0, turbPos.z || 0);
+
+    for (const f of this.fishList) {
+      const fishPos = f.group.position;
+      const dist = fishPos.distanceTo(tPos);
+      if (dist < 5.0) {
+        f.scaredTimer = 1.4;
+        if (turbDir && typeof turbDir.clone === "function") {
+          _vDiff.copy(turbDir).multiplyScalar(1.8);
+        } else if (turbDir && turbDir.x !== undefined) {
+          _vDiff.set(turbDir.x, turbDir.y || 0.4, turbDir.z || 0).normalize().multiplyScalar(1.8);
+        } else {
+          _vDiff.subVectors(fishPos, tPos).normalize().multiplyScalar(2.0);
+        }
+        f.velocity.add(_vDiff);
+      }
+    }
+  }
+
   sendWavePulse(pulsePoint) {
     // Oceanic diver wave pulse shockwave
     if (this.audio && this.audio.playWaterPulse) {
@@ -2120,13 +2445,18 @@ export class FishManager {
       this.audio.playTap();
     }
 
+    if (!pulsePoint) return;
+    const pPoint = (pulsePoint && typeof pulsePoint.clone === "function")
+      ? pulsePoint
+      : _vLookTarget.set(pulsePoint.x || 0, pulsePoint.y || 0, pulsePoint.z || 0);
+
     for (const f of this.fishList) {
       const fishPos = f.group.position;
-      const dist = fishPos.distanceTo(pulsePoint);
+      const dist = fishPos.distanceTo(pPoint);
       if (dist < 6.0) {
         f.scaredTimer = 2.0; // Burst dash away from wave disturbance
-        const awayVec = new THREE.Vector3().subVectors(fishPos, pulsePoint).normalize();
-        f.velocity.add(awayVec.multiplyScalar(3.2));
+        _vDiff.subVectors(fishPos, pPoint).normalize().multiplyScalar(3.2);
+        f.velocity.add(_vDiff);
       }
     }
   }
@@ -2182,8 +2512,6 @@ export class FishManager {
             if (minDist < 0.40) {
               const consumed = this.foodManager.consume(closestFood, pos, f.id);
               if (consumed) {
-                f.data.hunger = Math.min(100, (f.data.hunger || 0) + 25);
-                f.data.happiness = Math.min(100, (f.data.happiness || 0) + 15);
                 f.biteTimer = 0.35; // Trigger labriform braking flare
               }
             }
@@ -2193,36 +2521,98 @@ export class FishManager {
 
       // If no food or panic, idle wander across open ocean
       if (!targetPos && f.scaredTimer <= 0) {
-        f.wanderTimer -= delta;
-        if (f.wanderTimer <= 0) {
-          if (f.isMantaRay) {
-            f.wanderTimer = 7.0 + Math.random() * 5.0;
-            const angle = Math.random() * Math.PI * 2;
-            const rad = 14.0 + Math.random() * 8.0;
-            f.targetPos.set(
-              Math.cos(angle) * rad,
-              this.bounds.minY + 2.0 + Math.random() * 2.2,
-              -14.0 + Math.sin(angle) * 7.0
-            );
-          } else if (f.type === "clownfish") {
-            f.wanderTimer = 3.5 + Math.random() * 5.0;
-            // Clownfish stay primarily around reef knolls and sea anemones
-            f.targetPos.set(
-              -6.0 + Math.random() * 12.0,
-              this.bounds.minY + 0.8 + Math.random() * 2.8,
-              -5.5 + Math.random() * 6.5
-            );
-          } else {
-            f.wanderTimer = 3.5 + Math.random() * 5.0;
-            // Open ocean pelagic cruisers: wide oceanic patrol circuits across open seafloor
-            f.targetPos.set(
-              (Math.random() - 0.5) * 44.0,
-              this.bounds.minY + 0.8 + Math.random() * 4.8,
-              -22.0 + Math.random() * 24.5
-            );
+        // Sea Turtle periodic surface breathing cycle
+        if (f.isSeaTurtle) {
+          if (f.breatheTimer === undefined) f.breatheTimer = 35.0 + Math.random() * 25.0;
+          f.breatheTimer -= delta;
+
+          if (f.breatheTimer <= 0) {
+            if (f.surfaceAttemptTimer === undefined || f.surfaceAttemptTimer === null) {
+              f.surfaceAttemptTimer = 18.0; // Max 18s attempt before safely diving again
+            }
+            f.surfaceAttemptTimer -= delta;
+            f.targetPos.set(pos.x * 0.7, this.bounds.maxY - 0.25, pos.z * 0.7);
+            targetPos = f.targetPos;
+            targetSpeed = f.maxSpeed * 1.1;
+
+            if (pos.y >= this.bounds.maxY - 0.55) {
+              if (!f.breathingDuration) f.breathingDuration = 3.5;
+              f.breathingDuration -= delta;
+              if (Math.random() < 0.35 && this.world && this.world.spawnBubble) {
+                this.world.spawnBubble(pos.x, pos.y + 0.25, pos.z + 0.35, 0.05 + Math.random() * 0.04);
+              }
+              if (f.breathingDuration <= 0) {
+                f.breatheTimer = 50.0 + Math.random() * 35.0;
+                f.breathingDuration = null;
+                f.surfaceAttemptTimer = null;
+                f.wanderTimer = 0;
+              }
+            } else if (f.surfaceAttemptTimer <= 0) {
+              // Surface attempt timed out, resume normal diving
+              f.breatheTimer = 40.0 + Math.random() * 20.0;
+              f.breathingDuration = null;
+              f.surfaceAttemptTimer = null;
+              f.wanderTimer = 0;
+            }
           }
         }
-        targetPos = f.targetPos;
+
+        if (!targetPos) {
+          f.wanderTimer -= delta;
+          if (f.wanderTimer <= 0) {
+            if (f.isMantaRay) {
+              f.wanderTimer = 7.0 + Math.random() * 5.0;
+              const angle = Math.random() * Math.PI * 2;
+              const rad = 14.0 + Math.random() * 8.0;
+              f.targetPos.set(
+                Math.cos(angle) * rad,
+                this.bounds.minY + 2.0 + Math.random() * 2.2,
+                -14.0 + Math.sin(angle) * 7.0
+              );
+            } else if (f.isSeaTurtle) {
+              f.wanderTimer = 8.0 + Math.random() * 6.0;
+              const angle = Math.random() * Math.PI * 2;
+              const rad = 6.0 + Math.random() * 12.0;
+              f.targetPos.set(
+                Math.cos(angle) * rad,
+                this.bounds.minY + 1.2 + Math.random() * 3.2,
+                -8.0 + Math.sin(angle) * 7.0
+              );
+            } else if (f.type === "clownfish") {
+              f.wanderTimer = 3.5 + Math.random() * 5.0;
+              // Check symbiotic anemone association (validate in-scene parentage and coordinates)
+              const activeAnemones = this.world?.decorations?.anemones?.filter(
+                a => a && a.group && a.group.parent && a.worldPos && (a.worldPos.x !== 0 || a.worldPos.z !== 0)
+              );
+              if (activeAnemones && activeAnemones.length > 0 && Math.random() < 0.65) {
+                const anemone = activeAnemones[Math.floor(Math.random() * activeAnemones.length)];
+                // Shelter and hover inside the swaying tentacles
+                const hoverAngle = Math.random() * Math.PI * 2;
+                const hoverRad = 0.15 + Math.random() * 0.35;
+                f.targetPos.set(
+                  anemone.worldPos.x + Math.cos(hoverAngle) * hoverRad,
+                  anemone.worldPos.y + 0.45 + Math.random() * 0.35,
+                  anemone.worldPos.z + Math.sin(hoverAngle) * hoverRad
+                );
+              } else {
+                f.targetPos.set(
+                  -6.0 + Math.random() * 12.0,
+                  this.bounds.minY + 0.8 + Math.random() * 2.8,
+                  -5.5 + Math.random() * 6.5
+                );
+              }
+            } else {
+              f.wanderTimer = 3.5 + Math.random() * 5.0;
+              // Open ocean pelagic cruisers: wide oceanic patrol circuits across open seafloor
+              f.targetPos.set(
+                (Math.random() - 0.5) * 44.0,
+                this.bounds.minY + 0.8 + Math.random() * 4.8,
+                -22.0 + Math.random() * 24.5
+              );
+            }
+          }
+          targetPos = f.targetPos;
+        }
       }
 
       // 2. Steer towards target
@@ -2252,7 +2642,7 @@ export class FishManager {
       const maxDistZBack = -24.0;
       const maxDistZFront = 3.2; // Keep in front of camera view
       const minY = this.bounds.minY + 0.6;
-      const maxY = this.bounds.maxY - 0.8;
+      const maxY = (f.isSeaTurtle && f.breatheTimer <= 0) ? (this.bounds.maxY - 0.15) : (this.bounds.maxY - 0.8);
 
       if (pos.x < -maxDistX) f.velocity.x += 1.6 * delta;
       if (pos.x > maxDistX) f.velocity.x -= 1.6 * delta;
@@ -2275,7 +2665,19 @@ export class FishManager {
       pos.y = THREE.MathUtils.clamp(pos.y, this.bounds.minY + 0.3, this.bounds.maxY);
       pos.z = THREE.MathUtils.clamp(pos.z, -28.0, 4.5);
 
-      // 5. Rotation & Heading
+      // 5. Rotation, Turn Rate & Hydrodynamic Banking
+      let turnRate = 0;
+      if (f.velocity.lengthSq() > 0.002) {
+        const currHeading = Math.atan2(f.velocity.x, f.velocity.z);
+        if (f.prevHeading !== undefined) {
+          let dAngle = currHeading - f.prevHeading;
+          while (dAngle > Math.PI) dAngle -= Math.PI * 2;
+          while (dAngle < -Math.PI) dAngle += Math.PI * 2;
+          turnRate = dAngle / Math.max(0.001, delta);
+        }
+        f.prevHeading = currHeading;
+      }
+
       if (f.isMantaRay) {
         // Manta Ray Heading, Banking Roll & Traveling Wing Wave Kinematics
         if (f.velocity.lengthSq() > 0.001) {
@@ -2283,16 +2685,27 @@ export class FishManager {
           f.group.lookAt(_vLookTarget);
         }
 
-        // Natural hydrodynamic banking roll applied to local forward spine axis (+Z)
-        const bank = THREE.MathUtils.clamp(-f.velocity.x * 0.24, -0.45, 0.45);
+        // Natural hydrodynamic banking roll into turns (recovers upright on straight lines)
+        const targetBank = THREE.MathUtils.clamp(-turnRate * 0.45, -0.42, 0.42);
+        f.currentBank = THREE.MathUtils.lerp(f.currentBank || 0, targetBank, delta * 3.8);
         if (f.parts.model) {
-          f.parts.model.rotation.z = bank;
+          f.parts.model.rotation.z = f.currentBank;
         }
 
         // Batoid Traveling Pectoral Flap Kinematics (Majestic pelagic hydrofoil glide)
         const s = f.parts.scale || 2.4;
         const omega = 1.35;
         const tWave = time * omega + f.phaseOffset;
+
+        // Periodic pelagic soaring cycle (2-3 wingbeats, then broad hydrofoil glide)
+        if (f.glideTimer === undefined) f.glideTimer = (f.phaseOffset || 0) * 2.0;
+        f.glideTimer += delta;
+        const mantaCycle = 7.2;
+        const tManta = f.glideTimer % mantaCycle;
+        const isMantaFlapping = (f.scaredTimer > 0 || tManta < 3.2);
+        const flapAmp = isMantaFlapping
+          ? (0.35 + 0.65 * Math.sin((tManta / 3.2) * Math.PI))
+          : (0.12 + Math.sin(time * 0.8) * 0.04);
 
         if (f.parts.discMesh && f.parts.basePositions) {
           const posAttr = f.parts.discMesh.geometry.attributes.position;
@@ -2307,13 +2720,13 @@ export class FishManager {
 
             const spanRatio = Math.min(1.0, Math.abs(origX) / maxSpan);
             // Traveling wave flapped down trailing edge with graceful natural amplitude
-            const wingFlap = Math.sin(tWave - origZ * 0.65) * Math.pow(spanRatio, 1.45) * (0.22 * s);
-            const bodyHeave = Math.cos(tWave) * (0.025 * s);
+            const wingFlap = Math.sin(tWave - origZ * 0.65) * Math.pow(spanRatio, 1.45) * (0.22 * s * flapAmp);
+            const bodyHeave = Math.cos(tWave) * (0.025 * s * flapAmp);
 
             posAttr.setY(k, origY + wingFlap + bodyHeave);
 
             if (spanRatio > 0.45) {
-              const curl = Math.cos(tWave - origZ * 0.65) * Math.pow(spanRatio, 1.8) * (0.045 * s);
+              const curl = Math.cos(tWave - origZ * 0.65) * Math.pow(spanRatio, 1.8) * (0.045 * s * flapAmp);
               posAttr.setZ(k, origZ - curl);
             }
           }
@@ -2350,6 +2763,76 @@ export class FishManager {
               this.world.triggerSedimentDust(pos.x - 1.5, pos.z, 1.25, 2);
               this.world.triggerSedimentDust(pos.x + 1.5, pos.z, 1.25, 2);
             }
+          }
+        }
+      } else if (f.isSeaTurtle) {
+        // Sea Turtle Heading, Pitch & Banking Roll Kinematics
+        if (f.velocity.lengthSq() > 0.001) {
+          _vLookTarget.addVectors(pos, f.velocity);
+          f.group.lookAt(_vLookTarget);
+        }
+
+        // Hydrodynamic banking roll into turns (recovers upright on straight lines)
+        const targetBank = THREE.MathUtils.clamp(-turnRate * 0.40, -0.38, 0.38);
+        f.currentBank = THREE.MathUtils.lerp(f.currentBank || 0, targetBank, delta * 3.6);
+        if (f.parts.model) {
+          f.parts.model.rotation.z = f.currentBank;
+        }
+
+        // Pectoral flipper figure-8 hydrodynamic flight kinematics with reptilian glide
+        const tStroke = time * 1.6 + (f.phaseOffset || 0);
+        const strokeSin = Math.sin(tStroke);
+        const strokeCos = Math.cos(tStroke);
+
+        if (f.turtleGaitTimer === undefined) f.turtleGaitTimer = (f.phaseOffset || 0) * 3.0;
+        f.turtleGaitTimer += delta;
+        const turtleCycle = 6.2;
+        const tTurtle = f.turtleGaitTimer % turtleCycle;
+        const isSurfacing = (f.breatheTimer !== undefined && f.breatheTimer <= 0);
+        const isTurtlePower = (f.scaredTimer > 0 || isSurfacing || tTurtle < 2.4);
+        const strokeAmp = isTurtlePower ? (0.45 + 0.55 * Math.sin((tTurtle / 2.4) * Math.PI)) : 0.15;
+
+        if (f.parts.flippers) {
+          for (const fl of f.parts.flippers) {
+            if (isTurtlePower) {
+              fl.pivot.rotation.x = strokeCos * (0.30 * strokeAmp);
+              fl.pivot.rotation.z = fl.side * (0.32 + strokeSin * 0.46 * strokeAmp);
+              fl.pivot.rotation.y = -fl.side * (strokeCos * 0.24 * strokeAmp);
+            } else {
+              // Serene hydrofoil glide posture with subtle current feathering
+              const driftTrim = Math.sin(time * 0.8 + fl.side) * 0.04;
+              fl.pivot.rotation.x = 0.03 + driftTrim;
+              fl.pivot.rotation.z = fl.side * (0.42 + driftTrim);
+              fl.pivot.rotation.y = -fl.side * 0.05;
+            }
+          }
+        }
+
+        // Rear flipper rudder steering into turn
+        if (f.parts.rearFlippers) {
+          for (const rf of f.parts.rearFlippers) {
+            if (isTurtlePower) {
+              rf.pivot.rotation.z = rf.side * (0.12 + Math.sin(tStroke - 1.2) * 0.14);
+              rf.pivot.rotation.x = Math.cos(tStroke - 1.2) * 0.08;
+            } else {
+              rf.pivot.rotation.z = rf.side * 0.14 - turnRate * 0.16;
+              rf.pivot.rotation.x = Math.cos(time * 0.7) * 0.04;
+            }
+          }
+        }
+
+        // Alert neck and head scanning
+        if (f.parts.neck) {
+          f.parts.neck.rotation.y = Math.sin(time * 0.65 + (f.phaseOffset || 0)) * 0.16;
+          f.parts.neck.rotation.x = Math.sin(time * 0.4) * 0.08;
+        }
+
+        // Seafloor sand interaction (Dust stirred when cruising near seabed)
+        if (this.world && this.world.triggerSedimentDust) {
+          const distFromFloor = pos.y - this.bounds.minY;
+          if (distFromFloor < 1.0 && (!f.lastDustTime || time - f.lastDustTime > 1.0)) {
+            f.lastDustTime = time;
+            this.world.triggerSedimentDust(pos.x, pos.z, 0.95, 1);
           }
         }
       } else if (f.isJellyfish) {
@@ -2458,8 +2941,9 @@ export class FishManager {
           f.group.lookAt(_vLookTarget);
         }
 
-        // 3D Hydrodynamic banking roll angle calculated from lateral velocity
-        const bankAngle = THREE.MathUtils.clamp(-f.velocity.x * 0.22, -0.35, 0.35);
+        // 3D Hydrodynamic banking roll angle calculated from actual turn rate
+        const targetBank = THREE.MathUtils.clamp(-turnRate * 0.35, -0.35, 0.35);
+        f.currentBank = THREE.MathUtils.lerp(f.currentBank || 0, targetBank, delta * 4.8);
 
         // Biomechanical travelling sine wave undulation
         const baseFreq = (f.scaredTimer > 0 ? 14 : 7.2) * (currentSpeed / (f.maxSpeed || 1));
@@ -2569,8 +3053,19 @@ export class FishManager {
 
         // 7. Head Counter-Yaw, Natural Breathing Roll & Hydrodynamic Banking
         if (f.parts.model) {
-          f.parts.model.rotation.x = bankAngle;
-          f.parts.model.rotation.y = -Math.PI / 2 - Math.sin(tWave) * 0.05 * burstFactor;
+          // Clownfish symbiotic bathing wiggle dance when near giant anemone
+          let clownWiggle = 0;
+          if (f.type === "clownfish" && this.world?.decorations?.anemones) {
+            for (const a of this.world.decorations.anemones) {
+              if (a.worldPos && pos.distanceTo(a.worldPos) < 0.85) {
+                clownWiggle = Math.sin(time * 6.5 + f.phaseOffset) * 0.14;
+                break;
+              }
+            }
+          }
+
+          f.parts.model.rotation.x = f.currentBank;
+          f.parts.model.rotation.y = -Math.PI / 2 - Math.sin(tWave) * 0.05 * burstFactor + clownWiggle;
           f.parts.model.rotation.z = Math.sin(tWave) * 0.06 * burstFactor;
         }
 
@@ -2578,8 +3073,9 @@ export class FishManager {
         if (f.parts.pecLeft && f.parts.pecRight) {
           const pecFreq = effectiveFreq * 1.15;
           const pecPhase = time * pecFreq + f.phaseOffset;
-          let pecSweep = Math.sin(pecPhase) * (0.28 + 0.18 * burstFactor);
-          let pecFeather = Math.cos(pecPhase) * 0.18;
+          const pecRowAmp = (f.scaredTimer > 0) ? 1.0 : (tGait < burstDuration ? burstFactor : 0.25);
+          let pecSweep = Math.sin(pecPhase) * (0.28 * pecRowAmp);
+          let pecFeather = Math.cos(pecPhase) * (0.18 * pecRowAmp);
 
           // Natural labriform braking flare when snapping prey
           if (f.biteTimer > 0) {
@@ -2590,11 +3086,11 @@ export class FishManager {
 
           f.parts.pecLeft.rotation.y = 0.42 + pecSweep;
           f.parts.pecLeft.rotation.x = pecFeather;
-          f.parts.pecLeft.rotation.z = 0.10 + Math.sin(pecPhase) * 0.08;
+          f.parts.pecLeft.rotation.z = 0.10 + Math.sin(pecPhase) * 0.08 * pecRowAmp;
 
           f.parts.pecRight.rotation.y = -0.42 - pecSweep;
           f.parts.pecRight.rotation.x = -pecFeather;
-          f.parts.pecRight.rotation.z = -0.10 - Math.sin(pecPhase) * 0.08;
+          f.parts.pecRight.rotation.z = -0.10 - Math.sin(pecPhase) * 0.08 * pecRowAmp;
         }
 
         // 9. Sensory Barbels (Swaying in currents for Koi)
