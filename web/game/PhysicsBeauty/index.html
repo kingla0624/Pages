@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>物理之美 (The Beauty of Physics) | 1:1 像素级复刻</title>
+  <meta name="description" content="基于 WebGL / Three.js / GLSL 打造的《物理之美》一镜到底视听作品：从普朗克长度到整个宇宙。">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%23e63926%22/><circle cx=%2250%22 cy=%2250%22 r=%2220%22 fill=%22%23050507%22/></svg>">
+  
+  <link rel="stylesheet" href="./css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- 3D 渲染主画布容器 -->
+  <div id="canvas-container"></div>
+
+  <!-- 电影胶片边框与暗角遮罩 (Letterbox & Vignette) -->
+  <div class="letterbox top-bar"></div>
+  <div class="letterbox bottom-bar"></div>
+  <div class="film-vignette"></div>
+  <div class="anamorphic-flare"></div>
+
+  <!-- 核心科幻 HUD 图层 -->
+  <div id="hud-layer">
+    <!-- 顶部状态栏 -->
+    <header class="hud-top">
+      <div class="hud-title">THE BEAUTY OF PHYSICS</div>
+      <div class="hud-rec">
+        <span class="rec-dot"></span>
+        <span class="rec-text">REC · ONE TAKE</span>
+      </div>
+      <div class="hud-timecode" id="hud-timecode">00:00:00:00</div>
+    </header>
+
+    <!-- 中间动态字幕与主题文案 -->
+    <div class="hud-center-content" id="hud-center-content">
+      <!-- 片头主标题 -->
+      <div class="title-card" id="title-card">
+        <div class="intro-eyebrow" id="intro-eyebrow">从最小的尺度——</div>
+        <h1 class="main-title">物理之美</h1>
+        <div class="english-title">THE BEAUTY OF PHYSICS</div>
+        <div class="subtitle-desc">一镜到底：从普朗克长度，到整个宇宙</div>
+      </div>
+
+      <!-- 场景字幕容器 -->
+      <div class="scene-caption" id="scene-caption">
+        <div class="caption-tag" id="caption-tag">01 - DOUBLE SLIT</div>
+        <div class="caption-main" id="caption-main">每一个电子，都同时穿过了两条缝</div>
+        <div class="caption-sub" id="caption-sub">单个电子随机落下，千万个电子显现出波的条纹</div>
+      </div>
+
+      <!-- 场景特殊指示器 (例如：地金共振年数、黑洞公式) -->
+      <div class="orbit-counter" id="orbit-counter">
+        <div class="orbit-ratio">EARTH : VENUS &nbsp; 8 : 13</div>
+        <div class="orbit-years"><span id="orbit-year-val">1.1</span> 年</div>
+      </div>
+
+      <!-- 尾声爱因斯坦名言 -->
+      <div class="quote-card" id="quote-card">
+        <blockquote class="quote-text">「宇宙最不可理解之处，<br>在于它是可以被理解的。」</blockquote>
+        <div class="quote-author">— ALBERT EINSTEIN —</div>
+      </div>
+
+      <!-- 终末卡片 -->
+      <div class="end-card" id="end-card">
+        <h2 class="end-title">物理之美</h2>
+        <div class="end-sub">THE BEAUTY OF PHYSICS</div>
+        <div class="end-topics">量子 &nbsp;·&nbsp; 混沌 &nbsp;·&nbsp; 引力波 &nbsp;·&nbsp; 轨道 &nbsp;·&nbsp; 宇宙 &nbsp;·&nbsp; 黑洞</div>
+      </div>
+    </div>
+
+    <!-- 底部遥测栏 -->
+    <footer class="hud-bottom">
+      <!-- 左侧：章节索引 -->
+      <div class="chapter-info">
+        <div class="chapter-num" id="chapter-num">00</div>
+        <div class="chapter-labels">
+          <div class="chapter-en" id="chapter-en">PLANCK SCALE</div>
+          <div class="chapter-cn" id="chapter-cn">普朗克尺度</div>
+        </div>
+      </div>
+
+      <!-- 中间：对数尺度标尺 -->
+      <div class="scale-ruler-container">
+        <div class="ruler-track" id="ruler-track">
+          <!-- 刻度线由 JS 动态生成 -->
+        </div>
+        <div class="ruler-indicator" id="ruler-indicator">
+          <div class="indicator-glow"></div>
+        </div>
+      </div>
+
+      <!-- 右侧：空间尺度读数与物理量 -->
+      <div class="scale-readout">
+        <canvas id="strain-hud-canvas" width="220" height="48" style="display:none; margin-bottom: 4px;"></canvas>
+        <div class="readout-formula" id="readout-formula"></div>
+        <div class="readout-label">空间尺度</div>
+        <div class="readout-value">
+          <span class="base">10</span><sup class="exp" id="scale-exp">-35</sup><span class="unit">m</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 交互控制浮窗 (默认低调半透明，悬停唤起) -->
+  <div id="interactive-panel" class="interactive-panel">
+    <div class="control-row">
+      <button id="btn-play-pause" class="hud-btn" title="播放 / 暂停">
+        <svg class="icon-play" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4" fill="currentColor"/></svg>
+        <svg class="icon-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" fill="currentColor"/><rect x="14" y="4" width="4" height="16" fill="currentColor"/></svg>
+      </button>
+
+      <button id="btn-restart" class="hud-btn" title="重播整片">
+        <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor"/></svg>
+      </button>
+
+      <!-- 时间进度滑杆 -->
+      <div class="timeline-bar-wrapper">
+        <input type="range" id="timeline-slider" min="0" max="76" step="0.01" value="0">
+        <div class="timeline-progress" id="timeline-progress"></div>
+      </div>
+
+      <button id="btn-audio" class="hud-btn" title="声音开 / 关">
+        <svg class="icon-audio-on" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="currentColor"/></svg>
+        <svg class="icon-audio-off" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" fill="currentColor"/></svg>
+      </button>
+
+      <button id="btn-fullscreen" class="hud-btn" title="全屏">
+        <svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" fill="currentColor"/></svg>
+      </button>
+    </div>
+
+    <!-- 快捷章节跳转按钮群 -->
+    <div class="chapter-pills">
+      <button class="pill-btn active" data-chapter="0">00 普朗克</button>
+      <button class="pill-btn" data-chapter="1">01 双缝干涉</button>
+      <button class="pill-btn" data-chapter="2">02 混沌双摆</button>
+      <button class="pill-btn" data-chapter="3">03 引力波</button>
+      <button class="pill-btn" data-chapter="4">04 地金轨道</button>
+      <button class="pill-btn" data-chapter="5">05 宇宙网</button>
+      <button class="pill-btn" data-chapter="6">06 黑洞视界</button>
+    </div>
+  </div>
+
+  <!-- 主程序入口脚本 -->
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
