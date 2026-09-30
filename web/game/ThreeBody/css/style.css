@@ -1,0 +1,406 @@
+@charset "UTF-8";
+
+/* Reset & Base */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #030105;
+  color: #e2e8f0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 3D WebGL Canvas */
+#webgl-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  background: radial-gradient(ellipse at center, #110806 0%, #030105 100%);
+}
+
+#webgl-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Cinema Overlay (Letterbox) */
+.cinema-bars {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.cinema-bar-top, .cinema-bar-bottom {
+  height: 48px;
+  background: linear-gradient(to bottom, rgba(2, 1, 4, 0.95), rgba(2, 1, 4, 0));
+}
+
+.cinema-bar-bottom {
+  background: linear-gradient(to top, rgba(2, 1, 4, 0.95), rgba(2, 1, 4, 0));
+}
+
+/* Cinematic Sci-Fi HUD Overlay */
+#hud-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 32px 40px;
+  font-family: "JetBrains Mono", "SF Mono", Consolas, "PingFang SC", monospace;
+}
+
+/* Header & Civilization Status */
+.hud-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.hud-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.brand-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  color: #f59e0b;
+  text-transform: uppercase;
+}
+
+.pulse-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #ef4444;
+  box-shadow: 0 0 12px #ef4444;
+  animation: pulse-glow 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes pulse-glow {
+  0% { transform: scale(0.85); opacity: 0.6; }
+  100% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 18px #ff4d4d; }
+}
+
+.brand-title {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  color: #fff7ed;
+  text-shadow: 0 0 24px rgba(245, 158, 11, 0.45);
+  margin-top: 2px;
+}
+
+.brand-subtitle {
+  font-size: 12px;
+  letter-spacing: 0.35em;
+  color: rgba(226, 232, 240, 0.6);
+  text-transform: uppercase;
+}
+
+/* Ephemeris / Telemetry Panel */
+.telemetry-panel {
+  background: rgba(15, 7, 6, 0.55);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 14px 20px;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  min-width: 320px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.telemetry-top-section {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.15);
+  margin-bottom: 4px;
+}
+
+.radar-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+#radar-canvas {
+  width: 96px;
+  height: 96px;
+  display: block;
+}
+
+.radar-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: #f59e0b;
+  opacity: 0.85;
+}
+
+.telemetry-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+}
+
+.telemetry-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.telemetry-label {
+  color: #94a3b8;
+  letter-spacing: 0.1em;
+}
+
+.telemetry-value {
+  color: #fdba74;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.telemetry-value.danger {
+  color: #f87171;
+  text-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+}
+
+/* Center Crosshair & Lore Snippet */
+.hud-center {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  opacity: 0.85;
+}
+
+.reticle {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 50%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reticle::before, .reticle::after {
+  content: "";
+  position: absolute;
+  background-color: rgba(245, 158, 11, 0.6);
+}
+
+.reticle::before {
+  width: 1px;
+  height: 14px;
+}
+
+.reticle::after {
+  width: 14px;
+  height: 1px;
+}
+
+.lore-quote {
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  color: #fed7aa;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.95);
+  text-align: center;
+  max-width: 580px;
+  background: rgba(15, 7, 6, 0.55);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 8px 24px;
+  border-radius: 20px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.8s ease-in-out, transform 0.8s ease-in-out;
+}
+
+.lore-quote.fade-out {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* Footer & Controls */
+.hud-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.suns-status {
+  display: flex;
+  gap: 16px;
+}
+
+.sun-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(18, 10, 8, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 14px;
+  border-radius: 4px;
+  backdrop-filter: blur(8px);
+}
+
+.sun-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.sun-dot.alpha {
+  background: #f59e0b;
+  box-shadow: 0 0 10px #f59e0b;
+}
+
+.sun-dot.beta {
+  background: #ef4444;
+  box-shadow: 0 0 10px #ef4444;
+}
+
+.sun-dot.gamma {
+  background: #38bdf8;
+  box-shadow: 0 0 10px #38bdf8;
+}
+
+.sun-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.sun-name {
+  font-size: 10px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.sun-type {
+  font-size: 9px;
+  color: #94a3b8;
+}
+
+/* Action Controls (Pointer active) */
+.hud-actions-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.hud-hotkeys-tip {
+  font-size: 10px;
+  color: rgba(226, 232, 240, 0.45);
+  letter-spacing: 0.1em;
+  user-select: none;
+  font-family: inherit;
+}
+
+.hud-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.hud-btn {
+  background: rgba(20, 10, 8, 0.65);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fde68a;
+  padding: 10px 18px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.25s ease;
+  backdrop-filter: blur(10px);
+}
+
+.hud-btn:hover {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: #f59e0b;
+  color: #fff;
+  box-shadow: 0 0 18px rgba(245, 158, 11, 0.4);
+  transform: translateY(-2px);
+}
+
+.hud-btn:active {
+  transform: translateY(0);
+}
+
+.hud-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+/* Vignette Screen Effect */
+.vignette-effect {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: radial-gradient(circle at center, transparent 40%, rgba(10, 3, 2, 0.75) 100%);
+  mix-blend-mode: multiply;
+}
+
+/* Responsive Styles */
+@media (max-width: 860px) {
+  #hud-overlay {
+    padding: 20px 24px;
+  }
+  .brand-title {
+    font-size: 24px;
+  }
+  .telemetry-panel {
+    display: none;
+  }
+  .suns-status {
+    flex-direction: column;
+    gap: 6px;
+  }
+}

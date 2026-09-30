@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>三体：三日凌空 | 乱纪元金字塔 - WebGL 宏大场面展现</title>
+  <meta name="description" content="基于 WebGL / Three.js 打造的《三体》小说经典场景：三日凌空、乱纪元巨型金字塔、地表脱水人与飞升炽烈火尘。">
+  <link rel="stylesheet" href="./css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%23f59e0b%22/><circle cx=%2230%22 cy=%2230%22 r=%2216%22 fill=%22%23ef4444%22/><circle cx=%2275%22 cy=%2235%22 r=%2212%22 fill=%22%2338bdf8%22/></svg>">
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- 3D WebGL Canvas Viewport -->
+  <div id="webgl-container"></div>
+
+  <!-- Cinematic Film Vignette & Letterbox -->
+  <div class="vignette-effect"></div>
+  <div class="cinema-bars">
+    <div class="cinema-bar-top"></div>
+    <div class="cinema-bar-bottom"></div>
+  </div>
+
+  <!-- Sci-Fi HUD Telemetry & Lore Layer -->
+  <div id="hud-overlay">
+    <!-- Header -->
+    <header class="hud-header">
+      <div class="hud-brand">
+        <div class="brand-eyebrow">
+          <span class="pulse-indicator"></span>
+          <span>TRISOLARIS OBSERVER // EPISODE 01</span>
+        </div>
+        <h1 class="brand-title">三日凌空</h1>
+        <div class="brand-subtitle">CHAOTIC ERA // THE SACRED PYRAMID</div>
+      </div>
+
+      <!-- Live Telemetry with Gravitational Radar -->
+      <aside class="telemetry-panel">
+        <div class="telemetry-top-section">
+          <div class="radar-box">
+            <canvas id="radar-canvas" width="96" height="96"></canvas>
+            <span class="radar-label">三体引力摄动仪</span>
+          </div>
+          <div class="telemetry-metrics">
+            <div class="telemetry-row">
+              <span class="telemetry-label">文明序号</span>
+              <span class="telemetry-value" id="telemetry-civ">第 137 号文明</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-label">当前纪元</span>
+              <span class="telemetry-value danger" id="telemetry-era">极端乱纪元</span>
+            </div>
+            <div class="telemetry-row">
+              <span class="telemetry-label">辐射温度</span>
+              <span class="telemetry-value danger" id="telemetry-temp">3,420 K</span>
+            </div>
+          </div>
+        </div>
+        <div class="telemetry-row">
+          <span class="telemetry-label">天体灾异</span>
+          <span class="telemetry-value">三日凌空·强引力共振</span>
+        </div>
+        <div class="telemetry-row">
+          <span class="telemetry-label">潮汐引力差</span>
+          <span class="telemetry-value danger" id="telemetry-tide">14.82 G (撕裂预警)</span>
+        </div>
+        <div class="telemetry-row">
+          <span class="telemetry-label">文明状态</span>
+          <span class="telemetry-value">全面脱水 / 仓库存放</span>
+        </div>
+      </aside>
+    </header>
+
+    <!-- Center Lore Prompt -->
+    <div class="hud-center">
+      <div class="reticle"></div>
+      <p class="lore-quote">“这是漫长的严寒和酷热，是生命在烈火与坚冰间的漫长跋涉。”</p>
+    </div>
+
+    <!-- Footer Status & Actions -->
+    <footer class="hud-footer">
+      <!-- 3 Suns Status Cards -->
+      <div class="suns-status">
+        <div class="sun-card">
+          <div class="sun-dot alpha"></div>
+          <div class="sun-info">
+            <span class="sun-name">ALPHA // 黄金主序星</span>
+            <span class="sun-type">高能等离子体流</span>
+          </div>
+        </div>
+        <div class="sun-card">
+          <div class="sun-dot beta"></div>
+          <div class="sun-info">
+            <span class="sun-name">BETA // 猩红巨星</span>
+            <span class="sun-type">引力摄动中心</span>
+          </div>
+        </div>
+        <div class="sun-card">
+          <div class="sun-dot gamma"></div>
+          <div class="sun-info">
+            <span class="sun-name">GAMMA // 苍蓝致密星</span>
+            <span class="sun-type">高频硬辐射</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Controls -->
+      <div class="hud-actions-wrapper">
+        <div class="hud-hotkeys-tip">快捷键: [空格: 暂停/继续] [C: 切换视角] [M: 空间音频]</div>
+        <div class="hud-actions">
+          <button id="btn-camera-mode" class="hud-btn" title="切换电影运镜 / 自由视角 (快捷键: C)">
+            <svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+            <span class="btn-label">电影运镜 (ON)</span>
+          </button>
+          <button id="btn-toggle-sound" class="hud-btn" title="开关空间环境音频 (快捷键: M)">
+            <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+            <span class="btn-label">空间音频 (OFF)</span>
+          </button>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
