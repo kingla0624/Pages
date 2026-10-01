@@ -300,8 +300,8 @@ export class UIManager {
     } else if (tool === "clean") {
       this.handleWipeCleaning(e);
     } else if (tool === "inspect") {
-      // Raycast fish meshes
-      const fishMeshes = this.fishManager.fishList.map(f => f.group);
+      // Raycast fish meshes (zero heap allocation via cached groups)
+      const fishMeshes = this.fishManager.getFishGroups ? this.fishManager.getFishGroups() : this.fishManager.fishList.map(f => f.group);
       const hits = this.scene.getRaycastObjects(e.clientX, e.clientY, fishMeshes);
       if (hits.length > 0) {
         const foundFish = this.fishManager.getFishByMesh(hits[0].object);
@@ -313,6 +313,16 @@ export class UIManager {
   }
 
   handleWipeCleaning(e) {
+    const now = performance.now();
+    if (this.lastCleanTime && now - this.lastCleanTime < 60) return;
+    if (this.lastCleanPos) {
+      const dx = e.clientX - this.lastCleanPos.x;
+      const dy = e.clientY - this.lastCleanPos.y;
+      if (dx * dx + dy * dy < 36) return; // minimum movement threshold
+    }
+    this.lastCleanTime = now;
+    this.lastCleanPos = { x: e.clientX, y: e.clientY };
+
     this.audio.playClean();
     this.state.cleanTank(4);
     this.scene.setCleanliness(this.state.data.cleanliness);

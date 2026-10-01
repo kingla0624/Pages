@@ -109,10 +109,16 @@ export class DecorationManager {
       if (dec.rotY !== undefined) obj.rotation.y = dec.rotY;
       if (dec.scale !== undefined) obj.scale.setScalar(dec.scale);
 
-      // Enable realistic shadow casting and receiving and dynamic sunlight caustics for all decoration meshes
+      // Enable realistic shadow casting on solid structures, receiving and dynamic sunlight caustics
       obj.traverse(child => {
         if (child.isMesh && child.material !== this.sharedShadowMat) {
-          child.castShadow = true;
+          const mat = child.material;
+          const geom = child.geometry;
+          const isFoliageOrTentacle = mat && (mat.transparent || mat.transmission > 0);
+          const isTinyDetail = geom && (geom.type === "RingGeometry" || geom.type === "TorusGeometry" || geom.type === "CircleGeometry");
+          if (!isFoliageOrTentacle && !isTinyDetail) {
+            child.castShadow = true;
+          }
           child.receiveShadow = true;
           if (this.world?.injectCaustics && child.material) {
             this.world.injectCaustics(child.material, 0.35);
@@ -200,16 +206,30 @@ export class DecorationManager {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 512, 512);
 
-    // Deep mineral sediment layers & crevices
+    // Deep mineral sediment layers & crevices via direct TypedArray writes
+    const imgData = ctx.getImageData(0, 0, 512, 512);
+    const d = imgData.data;
     for (let i = 0; i < 18000; i++) {
-      const rx = Math.random() * 512;
-      const ry = Math.random() * 512;
+      const rx = (Math.random() * 511) | 0;
+      const ry = (Math.random() * 511) | 0;
+      const idx = (ry * 512 + rx) * 4;
       const r = Math.random();
-      if (r > 0.70) ctx.fillStyle = "rgba(12, 11, 9, 0.45)"; // crevice shadow
-      else if (r > 0.40) ctx.fillStyle = "rgba(110, 105, 96, 0.25)"; // light calcite
-      else ctx.fillStyle = "rgba(45, 65, 40, 0.22)"; // marine biofilm
-      ctx.fillRect(rx, ry, 2.0, 2.0);
+      if (r > 0.70) {
+        // crevice shadow
+        d[idx] = Math.max(0, d[idx] - 25);
+        d[idx + 1] = Math.max(0, d[idx + 1] - 25);
+        d[idx + 2] = Math.max(0, d[idx + 2] - 25);
+      } else if (r > 0.40) {
+        // light calcite
+        d[idx] = Math.min(255, d[idx] + 28);
+        d[idx + 1] = Math.min(255, d[idx + 1] + 28);
+        d[idx + 2] = Math.min(255, d[idx + 2] + 28);
+      } else {
+        // marine biofilm
+        d[idx + 1] = Math.min(255, d[idx + 1] + 16);
+      }
     }
+    ctx.putImageData(imgData, 0, 0);
 
     // Natural crustose coralline algae (irregular organic crusts blending into crevices)
     const crustColors = [
@@ -1169,11 +1189,13 @@ export class DecorationManager {
       if (item.type === "seaweed") {
         for (const b of item.blades) {
           const pos = b.posAttr;
+          const arr = pos.array;
           const orig = b.origX;
           const count = pos.count;
 
           for (let i = 0; i < count; i++) {
-            const y = orig[i * 3 + 1];
+            const idx = i * 3;
+            const y = orig[idx + 1];
             const heightRatio = Math.max(0, Math.min(1, y / b.height));
             const factor = heightRatio * heightRatio;
 
@@ -1182,8 +1204,8 @@ export class DecorationManager {
             const twist = Math.cos(time * b.speed * 0.75 + b.phase - heightRatio * 2.0) * 0.16 * factor;
             const micro = Math.sin(time * b.speed * 2.2 + b.phase * 1.5 - heightRatio * 4.5) * 0.06 * factor;
 
-            pos.setX(i, orig[i * 3] + sway + micro);
-            pos.setZ(i, orig[i * 3 + 2] + twist + micro * 0.5);
+            arr[idx] = orig[idx] + sway + micro;
+            arr[idx + 2] = orig[idx + 2] + twist + micro * 0.5;
           }
           pos.needsUpdate = true;
         }
@@ -1195,8 +1217,10 @@ export class DecorationManager {
         }
       } else if (item.type === "giant_anemone") {
         const anemone = item.data;
-        if (anemone.group.parent) {
+        if (anemone.group.parent && (!anemone.hasWorldPos || anemone.needsWorldPosUpdate)) {
           anemone.group.getWorldPosition(anemone.worldPos);
+          anemone.hasWorldPos = true;
+          anemone.needsWorldPosUpdate = false;
         }
 
         // Handle touch retraction timer

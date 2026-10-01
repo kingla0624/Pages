@@ -29,6 +29,8 @@ export class FishManager {
 
     this.fishList = []; // Active 3D fish instances
     this.selectedFish = null;
+    this._cachedFishGroups = null;
+    this._fishGroupsDirty = true;
 
     // Shared procedural texture caches
     this.skinTextures = {};
@@ -40,6 +42,20 @@ export class FishManager {
 
     // Majestic wild oceanic giant: Ambient Manta Ray patrolling deep sea
     this.initAmbientMantaRay();
+  }
+
+  getFishGroups() {
+    if (!this._cachedFishGroups || this._fishGroupsDirty) {
+      const len = this.fishList.length;
+      if (!this._cachedFishGroups || this._cachedFishGroups.length !== len) {
+        this._cachedFishGroups = new Array(len);
+      }
+      for (let i = 0; i < len; i++) {
+        this._cachedFishGroups[i] = this.fishList[i].group;
+      }
+      this._fishGroupsDirty = false;
+    }
+    return this._cachedFishGroups;
   }
 
   createMiniFishGeom() {
@@ -157,6 +173,7 @@ export class FishManager {
       isAmbient: true
     };
     this.fishList.push(this.ambientManta);
+    this._fishGroupsDirty = true;
   }
 
   updateDistantSchool(delta, time) {
@@ -206,6 +223,7 @@ export class FishManager {
         this.rootGroup.remove(f.group);
         this.disposeFishMesh(f.group);
         this.fishList.splice(i, 1);
+        this._fishGroupsDirty = true;
       }
     }
 
@@ -285,10 +303,16 @@ export class FishManager {
 
     meshData.group.position.set(x, y, z);
 
-    // Enable soft underwater shadow casting for fish
+    // Enable soft underwater shadow casting for primary silhouette meshes
     meshData.group.traverse(child => {
       if (child.isMesh) {
-        child.castShadow = true;
+        const geom = child.geometry;
+        const mat = child.material;
+        const isDetail = geom && (geom.type === "RingGeometry" || geom.type === "TorusGeometry" || geom.type === "CircleGeometry");
+        const isTranslucentFin = mat && (mat.transparent || mat.opacity < 0.85);
+        if (!isDetail && !isTranslucentFin) {
+          child.castShadow = true;
+        }
       }
     });
 
@@ -317,6 +341,7 @@ export class FishManager {
     };
 
     this.fishList.push(fishInstance);
+    this._fishGroupsDirty = true;
     return fishInstance;
   }
 
@@ -1031,6 +1056,20 @@ export class FishManager {
     parts.xTail = bodyData.xTail;
     parts.xHead = bodyData.xHead;
 
+    // Precompute body spine wave kinematics factors to eliminate per-frame Math.pow, clamp and division
+    const bodyVCount = bodyGeom.attributes.position.count;
+    const bodyLen = Math.max(0.1, parts.xHead - parts.xTail);
+    const bodyTailFactors = new Float32Array(bodyVCount);
+    const bodyPhaseOffsets = new Float32Array(bodyVCount);
+    for (let k = 0; k < bodyVCount; k++) {
+      const origX = parts.basePositions[k * 3];
+      const u = THREE.MathUtils.clamp((origX - parts.xTail) / bodyLen, 0, 1);
+      bodyTailFactors[k] = Math.pow(1 - u, 1.5);
+      bodyPhaseOffsets[k] = (1 - u) * 3.2;
+    }
+    parts.bodyTailFactors = bodyTailFactors;
+    parts.bodyPhaseOffsets = bodyPhaseOffsets;
+
     // 3. Multi-layer realistic biological 3D eyes with orbital socket and physical glass cornea
     const eyePivots = [];
     const addRealisticEye = (zSign) => {
@@ -1273,6 +1312,24 @@ export class FishManager {
     parts.dorsalVHeights = dorsalGeom.userData.vHeights;
     parts.dorsalUChords = dorsalGeom.userData.uChords;
 
+    const dCount = dorsalGeom.attributes.position.count;
+    const dorsalPhases = new Float32Array(dCount);
+    const dorsalWaveAmp = new Float32Array(dCount);
+    const dorsalFlutterPhases = new Float32Array(dCount);
+    const dorsalFlutterAmp = new Float32Array(dCount);
+    for (let k = 0; k < dCount; k++) {
+      const v = parts.dorsalVHeights[k];
+      const u = parts.dorsalUChords[k];
+      dorsalPhases[k] = 1.2 + u * 2.8;
+      dorsalWaveAmp[k] = 0.08 * scale * v;
+      dorsalFlutterPhases[k] = u * 4.0;
+      dorsalFlutterAmp[k] = 0.015 * scale * v * v;
+    }
+    parts.dorsalPhases = dorsalPhases;
+    parts.dorsalWaveAmp = dorsalWaveAmp;
+    parts.dorsalFlutterPhases = dorsalFlutterPhases;
+    parts.dorsalFlutterAmp = dorsalFlutterAmp;
+
     // 6. Pelvic / Anal Fins
     if (type === "angelfish") {
       const feelerMat = new THREE.MeshStandardMaterial({
@@ -1318,6 +1375,18 @@ export class FishManager {
     parts.analVHeights = analGeom.userData.vHeights;
     parts.analUChords = analGeom.userData.uChords;
 
+    const aCount = analGeom.attributes.position.count;
+    const analPhases = new Float32Array(aCount);
+    const analAmp = new Float32Array(aCount);
+    for (let k = 0; k < aCount; k++) {
+      const v = parts.analVHeights[k];
+      const u = parts.analUChords[k];
+      analPhases[k] = 1.8 + u * 2.5;
+      analAmp[k] = 0.07 * scale * v;
+    }
+    parts.analPhases = analPhases;
+    parts.analAmp = analAmp;
+
     // 7. Deformable Caudal Fin attached at exact peduncle end
     const caudalFinPivot = new THREE.Group();
     caudalFinPivot.position.set(bodyData.xTail, 0, 0);
@@ -1334,6 +1403,42 @@ export class FishManager {
     parts.baseCaudalPositions = caudalGeom.userData.basePositions;
     parts.caudalUSpans = caudalGeom.userData.uSpans;
     parts.caudalVHeights = caudalGeom.userData.vHeights;
+
+    const cCount = caudalGeom.attributes.position.count;
+    if (type === "betta" && parts.caudalVHeights) {
+      const bPhase1 = new Float32Array(cCount);
+      const bAmp1 = new Float32Array(cCount);
+      const bPhase2 = new Float32Array(cCount);
+      const bAmp2 = new Float32Array(cCount);
+      const bFlutPhase = new Float32Array(cCount);
+      const bFlutAmp = new Float32Array(cCount);
+      for (let k = 0; k < cCount; k++) {
+        const uSpan = parts.caudalUSpans[k];
+        const vHeight = parts.caudalVHeights[k];
+        bPhase1[k] = 2.5 + uSpan * 3.6;
+        bAmp1[k] = 0.24 * scale * Math.pow(uSpan, 1.15);
+        bPhase2[k] = -uSpan * 4.2 + vHeight * 2.5;
+        bAmp2[k] = 0.065 * scale * Math.pow(uSpan, 1.4);
+        bFlutPhase[k] = uSpan * 2.8 + vHeight * Math.PI;
+        bFlutAmp[k] = 0.045 * scale * uSpan;
+      }
+      parts.bettaCaudalPhase1 = bPhase1;
+      parts.bettaCaudalAmp1 = bAmp1;
+      parts.bettaCaudalPhase2 = bPhase2;
+      parts.bettaCaudalAmp2 = bAmp2;
+      parts.bettaFlutterPhase = bFlutPhase;
+      parts.bettaFlutterAmp = bFlutAmp;
+    } else if (parts.caudalUSpans) {
+      const cPhases = new Float32Array(cCount);
+      const cAmps = new Float32Array(cCount);
+      for (let k = 0; k < cCount; k++) {
+        const uSpan = parts.caudalUSpans[k];
+        cPhases[k] = 3.8 + uSpan * 2.2;
+        cAmps[k] = 0.08 * scale * Math.pow(uSpan, 1.35);
+      }
+      parts.caudalPhases = cPhases;
+      parts.caudalAmpFactors = cAmps;
+    }
 
     // 8. Living Sensory Barbels for Koi
     if (type === "koi") {
@@ -2069,6 +2174,23 @@ export class FishManager {
     parts.basePositions = vertices.slice();
     parts.scale = scale;
 
+    const maxSpan = 2.2 * scale;
+    const vCount = vertices.length / 3;
+    const wingFlapFactors = new Float32Array(vCount);
+    const wingCurlFactors = new Float32Array(vCount);
+    const zPhases = new Float32Array(vCount);
+    for (let k = 0; k < vCount; k++) {
+      const origX = vertices[k * 3];
+      const origZ = vertices[k * 3 + 2];
+      const spanRatio = Math.min(1.0, Math.abs(origX) / maxSpan);
+      wingFlapFactors[k] = Math.pow(spanRatio, 1.45) * 0.22 * scale;
+      wingCurlFactors[k] = spanRatio > 0.45 ? (Math.pow(spanRatio, 1.8) * 0.045 * scale) : 0;
+      zPhases[k] = origZ * 0.65;
+    }
+    parts.wingFlapFactors = wingFlapFactors;
+    parts.wingCurlFactors = wingCurlFactors;
+    parts.zPhases = zPhases;
+
     // Lateral Elasmobranch Eyes on outer head margin
     [-1, 1].forEach(side => {
       const eyeGeom = new THREE.SphereGeometry(0.042 * scale, 16, 12);
@@ -2488,17 +2610,18 @@ export class FishManager {
         // Check for nearby falling food
         if (activeFoods.length > 0 && f.data.hunger < 95) {
           let closestFood = null;
-          let minDist = 7.0; // Detection radius in open water
+          let minDistSq = 49.0; // 7.0 * 7.0 detection radius in open water
           for (const food of activeFoods) {
             if (food.life <= 0 || food.bitesLeft <= 0) continue;
-            const d = pos.distanceTo(food.mesh.position);
-            if (d < minDist) {
-              minDist = d;
+            const dSq = pos.distanceToSquared(food.mesh.position);
+            if (dSq < minDistSq) {
+              minDistSq = dSq;
               closestFood = food;
             }
           }
 
           if (closestFood) {
+            const minDist = Math.sqrt(minDistSq);
             targetPos = closestFood.mesh.position;
             // Strike acceleration when closing in on prey pellet
             if (minDist < 1.4) {
@@ -2581,11 +2704,19 @@ export class FishManager {
             } else if (f.type === "clownfish") {
               f.wanderTimer = 3.5 + Math.random() * 5.0;
               // Check symbiotic anemone association (validate in-scene parentage and coordinates)
-              const activeAnemones = this.world?.decorations?.anemones?.filter(
-                a => a && a.group && a.group.parent && a.worldPos && (a.worldPos.x !== 0 || a.worldPos.z !== 0)
-              );
-              if (activeAnemones && activeAnemones.length > 0 && Math.random() < 0.65) {
-                const anemone = activeAnemones[Math.floor(Math.random() * activeAnemones.length)];
+              const anemones = this.world?.decorations?.anemones;
+              let anemone = null;
+              if (anemones && anemones.length > 0 && Math.random() < 0.65) {
+                const startIdx = Math.floor(Math.random() * anemones.length);
+                for (let k = 0; k < anemones.length; k++) {
+                  const candidate = anemones[(startIdx + k) % anemones.length];
+                  if (candidate && candidate.group && candidate.group.parent && candidate.worldPos && (candidate.worldPos.x !== 0 || candidate.worldPos.z !== 0)) {
+                    anemone = candidate;
+                    break;
+                  }
+                }
+              }
+              if (anemone) {
                 // Shelter and hover inside the swaying tentacles
                 const hoverAngle = Math.random() * Math.PI * 2;
                 const hoverRad = 0.15 + Math.random() * 0.35;
@@ -2628,8 +2759,9 @@ export class FishManager {
       for (let j = 0; j < this.fishList.length; j++) {
         if (i === j) continue;
         const other = this.fishList[j];
-        const d = pos.distanceTo(other.group.position);
-        if (d < 0.6 && d > 0.001) {
+        const d2 = pos.distanceToSquared(other.group.position);
+        if (d2 < 0.36 && d2 > 0.000001) {
+          const d = Math.sqrt(d2);
           _vDiff.subVectors(pos, other.group.position).normalize();
           _vDiff.divideScalar(d);
           _vSepForce.add(_vDiff);
@@ -2707,31 +2839,27 @@ export class FishManager {
           ? (0.35 + 0.65 * Math.sin((tManta / 3.2) * Math.PI))
           : (0.12 + Math.sin(time * 0.8) * 0.04);
 
-        if (f.parts.discMesh && f.parts.basePositions) {
+        if (f.parts.discMesh && f.parts.basePositions && f.parts.wingFlapFactors) {
           const posAttr = f.parts.discMesh.geometry.attributes.position;
+          const posArr = posAttr.array;
           const basePos = f.parts.basePositions;
           const count = posAttr.count;
-          const maxSpan = 2.2 * s;
+          const wingFlapFactors = f.parts.wingFlapFactors;
+          const wingCurlFactors = f.parts.wingCurlFactors;
+          const zPhases = f.parts.zPhases;
+          const bodyHeave = Math.cos(tWave) * (0.025 * s * flapAmp);
 
           for (let k = 0; k < count; k++) {
-            const origX = basePos[k * 3];
-            const origY = basePos[k * 3 + 1];
-            const origZ = basePos[k * 3 + 2];
+            const k3 = k * 3;
+            const waveAngle = tWave - zPhases[k];
+            posArr[k3 + 1] = basePos[k3 + 1] + Math.sin(waveAngle) * (wingFlapFactors[k] * flapAmp) + bodyHeave;
 
-            const spanRatio = Math.min(1.0, Math.abs(origX) / maxSpan);
-            // Traveling wave flapped down trailing edge with graceful natural amplitude
-            const wingFlap = Math.sin(tWave - origZ * 0.65) * Math.pow(spanRatio, 1.45) * (0.22 * s * flapAmp);
-            const bodyHeave = Math.cos(tWave) * (0.025 * s * flapAmp);
-
-            posAttr.setY(k, origY + wingFlap + bodyHeave);
-
-            if (spanRatio > 0.45) {
-              const curl = Math.cos(tWave - origZ * 0.65) * Math.pow(spanRatio, 1.8) * (0.045 * s * flapAmp);
-              posAttr.setZ(k, origZ - curl);
+            const curlFactor = wingCurlFactors[k];
+            if (curlFactor > 0) {
+              posArr[k3 + 2] = basePos[k3 + 2] - Math.cos(waveAngle) * (curlFactor * flapAmp);
             }
           }
           posAttr.needsUpdate = true;
-          f.parts.discMesh.geometry.computeVertexNormals();
         }
 
         // Whip tail trailing undulation (fluid multi-axis lag)
@@ -2952,22 +3080,18 @@ export class FishManager {
         const fishScale = f.data.size || 1.0;
         const effectiveAmp = 0.14 * fishScale * (0.25 + 0.75 * burstFactor);
 
-        // 3. Anatomical Body Spine Wave Deformation
-        if (f.parts.bodyGeom && f.parts.basePositions) {
+        // 3. Anatomical Body Spine Wave Deformation (vectorized TypedArray indexing)
+        if (f.parts.bodyGeom && f.parts.basePositions && f.parts.bodyTailFactors) {
           const posAttr = f.parts.bodyGeom.attributes.position;
+          const posArr = posAttr.array;
           const basePos = f.parts.basePositions;
           const count = posAttr.count;
-          const xTail = f.parts.xTail;
-          const xHead = f.parts.xHead;
-          const len = Math.max(0.1, xHead - xTail);
+          const factors = f.parts.bodyTailFactors;
+          const phases = f.parts.bodyPhaseOffsets;
 
           for (let k = 0; k < count; k++) {
-            const origX = basePos[k * 3];
-            const origZ = basePos[k * 3 + 2];
-            const u = THREE.MathUtils.clamp((origX - xTail) / len, 0, 1);
-            const tailFactor = Math.pow(1 - u, 1.5);
-            const wave = Math.sin(tWave - (1 - u) * 3.2) * effectiveAmp * tailFactor;
-            posAttr.setZ(k, origZ + wave);
+            const k3 = k * 3;
+            posArr[k3 + 2] = basePos[k3 + 2] + Math.sin(tWave - phases[k]) * (effectiveAmp * factors[k]);
           }
           posAttr.needsUpdate = true;
         }
@@ -2979,74 +3103,79 @@ export class FishManager {
           f.parts.caudalFinPivot.rotation.y = Math.sin(tWave - 3.6) * 0.42 * (0.3 + 0.7 * burstFactor);
         }
 
-        if (f.parts.caudalFinGeom && f.parts.baseCaudalPositions && f.parts.caudalUSpans) {
+        if (f.parts.caudalFinGeom && f.parts.baseCaudalPositions) {
           const posAttr = f.parts.caudalFinGeom.attributes.position;
+          const posArr = posAttr.array;
           const basePos = f.parts.baseCaudalPositions;
-          const uSpans = f.parts.caudalUSpans;
-          const vHeights = f.parts.caudalVHeights;
           const count = posAttr.count;
 
-          if (f.type === "betta" && vHeights) {
+          if (f.type === "betta" && f.parts.bettaCaudalPhase1) {
             // Betta magnificent silk veil tail fluid multi-harmonic waving
+            const p1 = f.parts.bettaCaudalPhase1;
+            const a1 = f.parts.bettaCaudalAmp1;
+            const p2 = f.parts.bettaCaudalPhase2;
+            const a2 = f.parts.bettaCaudalAmp2;
+            const fp = f.parts.bettaFlutterPhase;
+            const fa = f.parts.bettaFlutterAmp;
+            const burstScale = 0.35 + 0.65 * burstFactor;
+            const time5 = time * 5.0 + f.phaseOffset;
+            const time32 = time * 3.2;
+
             for (let k = 0; k < count; k++) {
-              const origZ = basePos[k * 3 + 2];
-              const origY = basePos[k * 3 + 1];
-              const uSpan = uSpans[k];
-              const vHeight = vHeights[k];
+              const k3 = k * 3;
+              const wave1 = Math.sin(tWave - p1[k]) * (a1[k] * burstScale);
+              const wave2 = Math.sin(time5 + p2[k]) * a2[k];
+              const verticalFlutter = Math.cos(time32 + fp[k]) * fa[k];
 
-              // Travelling silk wave with trailing edge flutter
-              const wave1 = Math.sin(tWave - 2.5 - uSpan * 3.6) * (0.24 * fishScale * Math.pow(uSpan, 1.15) * (0.35 + 0.65 * burstFactor));
-              const wave2 = Math.sin(time * 5.0 - uSpan * 4.2 + vHeight * 2.5 + f.phaseOffset) * (0.065 * fishScale * Math.pow(uSpan, 1.4));
-              const verticalFlutter = Math.cos(time * 3.2 + uSpan * 2.8 + vHeight * Math.PI) * (0.045 * fishScale * uSpan);
-
-              posAttr.setZ(k, origZ + wave1 + wave2);
-              posAttr.setY(k, origY + verticalFlutter);
+              posArr[k3 + 2] = basePos[k3 + 2] + wave1 + wave2;
+              posArr[k3 + 1] = basePos[k3 + 1] + verticalFlutter;
             }
-          } else {
+          } else if (f.parts.caudalPhases) {
+            const phases = f.parts.caudalPhases;
+            const ampFactors = f.parts.caudalAmpFactors;
             for (let k = 0; k < count; k++) {
-              const origZ = basePos[k * 3 + 2];
-              const uSpan = uSpans[k];
-              // Hydrodynamic flipper cupping: trailing tips lag behind peduncle swing
-              const finFlex = Math.sin(tWave - 3.8 - uSpan * 2.2) * (0.08 * fishScale * Math.pow(uSpan, 1.35) * burstFactor);
-              posAttr.setZ(k, origZ + finFlex);
+              const k3 = k * 3;
+              posArr[k3 + 2] = basePos[k3 + 2] + Math.sin(tWave - phases[k]) * (ampFactors[k] * burstFactor);
             }
           }
           posAttr.needsUpdate = true;
         }
 
         // 5. Deformable Dorsal Fin Kinematics (Trailing wave lag + Fluid flutter)
-        if (f.parts.dorsalGeom && f.parts.baseDorsalPositions && f.parts.dorsalVHeights && f.parts.dorsalUChords) {
+        if (f.parts.dorsalGeom && f.parts.baseDorsalPositions && f.parts.dorsalPhases) {
           const posAttr = f.parts.dorsalGeom.attributes.position;
+          const posArr = posAttr.array;
           const basePos = f.parts.baseDorsalPositions;
-          const vHeights = f.parts.dorsalVHeights;
-          const uChords = f.parts.dorsalUChords;
           const count = posAttr.count;
+          const phases = f.parts.dorsalPhases;
+          const waveAmps = f.parts.dorsalWaveAmp;
+          const flutPhases = f.parts.dorsalFlutterPhases;
+          const flutAmps = f.parts.dorsalFlutterAmp;
+          const ampScale = 0.3 + 0.7 * burstFactor;
+          const time85 = time * 8.5 + f.phaseOffset;
 
           for (let k = 0; k < count; k++) {
-            const origZ = basePos[k * 3 + 2];
-            const v = vHeights[k]; // 0 at base, 1 at tip
-            const u = uChords[k];  // 0 at front, 1 at rear
-            const rayWave = Math.sin(tWave - 1.2 - u * 2.8) * (0.08 * fishScale * v * (0.3 + 0.7 * burstFactor));
-            const flutter = Math.sin(time * 8.5 + u * 4.0 + f.phaseOffset) * (0.015 * fishScale * v * v);
-            posAttr.setZ(k, origZ + rayWave + flutter);
+            const k3 = k * 3;
+            const rayWave = Math.sin(tWave - phases[k]) * (waveAmps[k] * ampScale);
+            const flutter = Math.sin(time85 + flutPhases[k]) * flutAmps[k];
+            posArr[k3 + 2] = basePos[k3 + 2] + rayWave + flutter;
           }
           posAttr.needsUpdate = true;
         }
 
         // 6. Deformable Anal Fin Kinematics
-        if (f.parts.analGeom && f.parts.baseAnalPositions && f.parts.analVHeights && f.parts.analUChords) {
+        if (f.parts.analGeom && f.parts.baseAnalPositions && f.parts.analPhases) {
           const posAttr = f.parts.analGeom.attributes.position;
+          const posArr = posAttr.array;
           const basePos = f.parts.baseAnalPositions;
-          const vHeights = f.parts.analVHeights;
-          const uChords = f.parts.analUChords;
           const count = posAttr.count;
+          const phases = f.parts.analPhases;
+          const amps = f.parts.analAmp;
+          const ampScale = 0.3 + 0.7 * burstFactor;
 
           for (let k = 0; k < count; k++) {
-            const origZ = basePos[k * 3 + 2];
-            const v = vHeights[k];
-            const u = uChords[k];
-            const rayWave = Math.sin(tWave - 1.8 - u * 2.5) * (0.07 * fishScale * v * (0.3 + 0.7 * burstFactor));
-            posAttr.setZ(k, origZ + rayWave);
+            const k3 = k * 3;
+            posArr[k3 + 2] = basePos[k3 + 2] + Math.sin(tWave - phases[k]) * (amps[k] * ampScale);
           }
           posAttr.needsUpdate = true;
         }
@@ -3057,7 +3186,7 @@ export class FishManager {
           let clownWiggle = 0;
           if (f.type === "clownfish" && this.world?.decorations?.anemones) {
             for (const a of this.world.decorations.anemones) {
-              if (a.worldPos && pos.distanceTo(a.worldPos) < 0.85) {
+              if (a.worldPos && pos.distanceToSquared(a.worldPos) < 0.7225) {
                 clownWiggle = Math.sin(time * 6.5 + f.phaseOffset) * 0.14;
                 break;
               }

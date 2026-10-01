@@ -12,8 +12,9 @@ export class FoodManager {
     this.audio = audioManager;
     this.gameState = gameState;
     this.foods = []; // active food items
+    this.foodPool = []; // reusable food object pool
     this.floatingEffects = []; // heart / coin 3D sprites
-    this.effectPool = []; // reusable sprite pool (zero GC allocations during feeding)
+    this.effectPool = []; // reusable effect wrapper pool (zero GC allocations)
 
     // Reusable geometry and materials for performance
     this.pelletGeom = new THREE.DodecahedronGeometry(0.08, 0);
@@ -63,31 +64,52 @@ export class FoodManager {
     const count = 2 + Math.floor(Math.random() * 3);
     for (let i = 0; i < count; i++) {
       const isFlake = Math.random() > 0.5;
-      const mesh = new THREE.Mesh(
-        isFlake ? this.flakeGeom : this.pelletGeom,
-        Math.random() > 0.3 ? this.foodMat1 : this.foodMat2
-      );
+      const geom = isFlake ? this.flakeGeom : this.pelletGeom;
+      const mat = Math.random() > 0.3 ? this.foodMat1 : this.foodMat2;
+      let f;
+
+      if (this.foodPool.length > 0) {
+        f = this.foodPool.pop();
+        f.mesh.geometry = geom;
+        f.mesh.material = mat;
+        f.mesh.scale.set(1, 1, 1);
+        f.mesh.visible = true;
+      } else {
+        const mesh = new THREE.Mesh(geom, mat);
+        f = {
+          mesh,
+          x: 0,
+          y: 0,
+          z: 0,
+          vy: 0,
+          driftPhase: 0,
+          driftSpeed: 0,
+          rotSpeedX: 0,
+          rotSpeedY: 0,
+          life: 25,
+          bitesLeft: 2
+        };
+      }
       
       const px = x + (Math.random() - 0.5) * 0.4;
       const pz = z + (Math.random() - 0.5) * 0.4;
-      mesh.position.set(px, y, pz);
-      mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+      f.mesh.position.set(px, y, pz);
+      f.mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
 
-      this.rootGroup.add(mesh);
+      this.rootGroup.add(f.mesh);
 
-      this.foods.push({
-        mesh,
-        x: px,
-        y,
-        z: pz,
-        vy: -0.4 - Math.random() * 0.3, // Sinking speed
-        driftPhase: Math.random() * Math.PI * 2,
-        driftSpeed: 1.5 + Math.random() * 1.5,
-        rotSpeedX: (Math.random() - 0.5) * 2,
-        rotSpeedY: (Math.random() - 0.5) * 2,
-        life: 25, // stays for max 25s before dissolving if uneaten
-        bitesLeft: 2
-      });
+      f.x = px;
+      f.y = y;
+      f.z = pz;
+      f.vy = -0.4 - Math.random() * 0.3; // Sinking speed
+      f.driftPhase = Math.random() * Math.PI * 2;
+      f.driftSpeed = 1.5 + Math.random() * 1.5;
+      f.rotSpeedX = (Math.random() - 0.5) * 2;
+      f.rotSpeedY = (Math.random() - 0.5) * 2;
+      f.life = 25; // stays for max 25s before dissolving if uneaten
+      f.bitesLeft = 2;
+
+      this.foods.push(f);
     }
 
     this.audio.playFeed();
@@ -95,14 +117,17 @@ export class FoodManager {
 
   createEatEffect(pos, type = "heart") {
     const baseTex = type === "heart" ? this.heartTexture : this.coinTexture;
-    let sprite;
+    let eff;
 
     if (this.effectPool.length > 0) {
-      sprite = this.effectPool.pop();
-      sprite.material.map = baseTex;
-      sprite.material.opacity = 1.0;
-      sprite.material.needsUpdate = true;
-      sprite.visible = true;
+      eff = this.effectPool.pop();
+      eff.sprite.material.map = baseTex;
+      eff.sprite.material.opacity = 1.0;
+      eff.sprite.material.needsUpdate = true;
+      eff.sprite.visible = true;
+      eff.vy = 0.8;
+      eff.opacity = 1;
+      eff.life = 1.0;
     } else {
       const mat = new THREE.SpriteMaterial({
         map: baseTex,
@@ -110,21 +135,22 @@ export class FoodManager {
         opacity: 1.0,
         depthWrite: false
       });
-      sprite = new THREE.Sprite(mat);
+      const sprite = new THREE.Sprite(mat);
       this.scene.add(sprite);
+      eff = {
+        sprite,
+        vy: 0.8,
+        opacity: 1,
+        life: 1.0
+      };
     }
 
-    sprite.position.copy(pos);
-    sprite.position.y += 0.3;
-    sprite.scale.set(0.6, 0.6, 0.6);
-    sprite.material.opacity = 1.0;
+    eff.sprite.position.copy(pos);
+    eff.sprite.position.y += 0.3;
+    eff.sprite.scale.set(0.6, 0.6, 0.6);
+    eff.sprite.material.opacity = 1.0;
 
-    this.floatingEffects.push({
-      sprite,
-      vy: 0.8,
-      opacity: 1,
-      life: 1.0
-    });
+    this.floatingEffects.push(eff);
   }
 
   update(delta) {
@@ -152,6 +178,8 @@ export class FoodManager {
       // Despawn expired food
       if (f.life <= 0 || f.bitesLeft <= 0) {
         this.rootGroup.remove(f.mesh);
+        f.mesh.visible = false;
+        this.foodPool.push(f);
         this.foods.splice(i, 1);
       }
     }
@@ -166,7 +194,7 @@ export class FoodManager {
 
       if (eff.life <= 0) {
         eff.sprite.visible = false;
-        this.effectPool.push(eff.sprite);
+        this.effectPool.push(eff);
         this.floatingEffects.splice(i, 1);
       }
     }
@@ -208,12 +236,18 @@ export class FoodManager {
       this.rootGroup.remove(f.mesh);
     }
     this.foods = [];
+    if (this.foodPool) {
+      for (const f of this.foodPool) {
+        this.rootGroup.remove(f.mesh);
+      }
+      this.foodPool = [];
+    }
     for (const eff of this.floatingEffects) {
       this.scene.remove(eff.sprite);
     }
     this.floatingEffects = [];
-    for (const s of this.effectPool) {
-      this.scene.remove(s);
+    for (const eff of this.effectPool) {
+      this.scene.remove(eff.sprite || eff);
     }
     this.effectPool = [];
 
