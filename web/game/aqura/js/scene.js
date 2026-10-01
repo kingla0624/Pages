@@ -346,7 +346,9 @@ export class AquariumScene {
     const surfaceGeom = new THREE.PlaneGeometry(width, depth, segX, segZ);
     surfaceGeom.rotateX(Math.PI / 2); // Facing downward into water
 
-    this.waterSurfaceBasePositions = surfaceGeom.attributes.position.array.slice();
+    this.waterSurfaceUniforms = {
+      uTime: { value: 0 }
+    };
 
     this.waterSurfaceMat = new THREE.MeshPhysicalMaterial({
       color: 0x38bdf8,
@@ -362,29 +364,31 @@ export class AquariumScene {
       depthWrite: false
     });
 
+    this.waterSurfaceMat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = this.waterSurfaceUniforms.uTime;
+      shader.vertexShader = `
+        uniform float uTime;
+      ` + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace(
+        "#include <begin_vertex>",
+        `
+        float swell1 = sin(position.x * 0.16 + uTime * 1.4) * 0.12;
+        float swell2 = cos(position.z * 0.20 + uTime * 1.1) * 0.08;
+        float chop = sin((position.x * 0.8 + position.z * 0.6) - uTime * 2.1) * 0.038;
+        vec3 transformed = vec3(position.x, position.y + swell1 + swell2 + chop, position.z);
+        `
+      );
+    };
+
     this.waterSurfaceMesh = new THREE.Mesh(surfaceGeom, this.waterSurfaceMat);
     this.waterSurfaceMesh.position.set(0, this.bounds.maxY - 0.05, -15.0);
     this.scene.add(this.waterSurfaceMesh);
   }
 
   updateWaterSurface(time) {
-    if (!this.waterSurfaceMesh || !this.waterSurfaceBasePositions) return;
-    const pos = this.waterSurfaceMesh.geometry.attributes.position;
-    const arr = pos.array;
-    const base = this.waterSurfaceBasePositions;
-    const count = pos.count;
-
-    for (let i = 0; i < count; i++) {
-      const idx = i * 3;
-      const bx = base[idx];
-      const bz = base[idx + 2];
-      // Multi-frequency ocean swells travelling across the surface
-      const swell1 = Math.sin(bx * 0.16 + time * 1.4) * 0.12;
-      const swell2 = Math.cos(bz * 0.20 + time * 1.1) * 0.08;
-      const chop = Math.sin((bx * 0.8 + bz * 0.6) - time * 2.1) * 0.038;
-      arr[idx + 1] = base[idx + 1] + swell1 + swell2 + chop;
+    if (this.waterSurfaceUniforms) {
+      this.waterSurfaceUniforms.uTime.value = time;
     }
-    pos.needsUpdate = true;
   }
 
   initCaustics() {
@@ -402,6 +406,19 @@ export class AquariumScene {
     this.causticsImageData = this.causticsCtx.createImageData(256, 256);
     this.causticsUniforms = [];
 
+    // Precompute 1D harmonic phase tables and 512-entry pow curve for ultra-fast caustics rasterization
+    this.causticsUArr = new Float32Array(128);
+    this.causticsVArr = new Float32Array(128);
+    for (let i = 0; i < 128; i++) {
+      this.causticsUArr[i] = (i * 2 / 256) * Math.PI * 4;
+      this.causticsVArr[i] = (i * 2 / 256) * Math.PI * 4;
+    }
+    this.causticsPowTable = new Float32Array(512);
+    for (let i = 0; i < 512; i++) {
+      this.causticsPowTable[i] = Math.pow(i / 511, 3.8);
+    }
+    this.causticsData32 = new Uint32Array(this.causticsImageData.data.buffer);
+
     // Apply directly to sand material with natural underwater irradiance
     this.sandMaterial.emissiveMap = this.causticsTexture;
     this.sandMaterial.emissive = new THREE.Color(0x0284c7);
@@ -410,45 +427,52 @@ export class AquariumScene {
 
   updateCaustics(time) {
     const ctx = this.causticsCtx;
-    const w = 256;
-    const h = 256;
     const imgData = this.causticsImageData;
-    const data = imgData.data;
+    const data32 = this.causticsData32;
+    const uArr = this.causticsUArr;
+    const vArr = this.causticsVArr;
+    const powTable = this.causticsPowTable;
 
     const t = time * 1.5;
+    const t07 = t * 0.7;
+    const t05 = t * 0.5;
+    const t06 = t * 0.6;
+    const t04 = t * 0.4;
 
-    for (let y = 0; y < h; y += 2) {
-      for (let x = 0; x < w; x += 2) {
-        const u = x / w;
-        const v = y / h;
+    for (let yi = 0; yi < 128; yi++) {
+      const y = yi * 2;
+      const row1 = y * 256;
+      const row2 = row1 + 256;
+      const vVal = vArr[yi];
+      const a2 = vVal + t05;
+      const cosA2 = Math.cos(a2);
 
-        // Guaranteed mathematically periodic at u=0/1 and v=0/1 (100% seamless tileable)
-        const a1 = u * Math.PI * 4 + t * 0.7;
-        const a2 = v * Math.PI * 4 + t * 0.5;
-        const a3 = (u + v) * Math.PI * 4 + t * 0.6;
-        const a4 = (u - v + 1.0) * Math.PI * 4 - t * 0.4;
+      for (let xi = 0; xi < 128; xi++) {
+        const x = xi * 2;
+        const uVal = uArr[xi];
+        const a1 = uVal + t07;
+        const a3 = uVal + vVal + t06;
+        const a4 = (uVal - vVal + 12.566370614359172) - t04; // 4 * PI
 
-        const v1 = Math.sin(a1 + Math.cos(a2));
+        const v1 = Math.sin(a1 + cosA2);
         const v2 = Math.cos(a2 + Math.sin(a1));
-        const v3 = Math.sin(a3) * 0.5 + Math.cos(a4) * 0.5;
+        const v3 = (Math.sin(a3) + Math.cos(a4)) * 0.5;
 
-        // Core intensity
-        const base = (v1 + v2 + v3 + 3) / 6;
-        const bright = Math.pow(base, 3.8);
+        // Core intensity mapped to 512-entry lookup table
+        const base = (v1 + v2 + v3 + 3) * (511 / 6);
+        const baseIdx = base < 0 ? 0 : (base > 511 ? 511 : (base | 0));
+        const bright = powTable[baseIdx];
 
-        const rVal = Math.min(255, Math.floor(bright * 180));
-        const gVal = Math.min(255, Math.floor(bright * 240));
-        const bVal = Math.min(255, Math.floor(bright * 255));
+        const rVal = (bright * 180) | 0;
+        const gVal = (bright * 240) | 0;
+        const bVal = (bright * 255) | 0;
+        const pixel32 = 0xff000000 | (bVal << 16) | (gVal << 8) | rVal;
 
-        for (let dy = 0; dy < 2; dy++) {
-          for (let dx = 0; dx < 2; dx++) {
-            const pixelIdx = ((y + dy) * w + (x + dx)) * 4;
-            data[pixelIdx] = rVal;
-            data[pixelIdx + 1] = gVal;
-            data[pixelIdx + 2] = bVal;
-            data[pixelIdx + 3] = 255;
-          }
-        }
+        const pIdx = row1 + x;
+        data32[pIdx] = pixel32;
+        data32[pIdx + 1] = pixel32;
+        data32[row2 + x] = pixel32;
+        data32[row2 + x + 1] = pixel32;
       }
     }
 

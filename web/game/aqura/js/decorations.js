@@ -310,14 +310,47 @@ export class DecorationManager {
 
       group.add(mesh);
 
+      const vCount = geom.attributes.position.count;
+      const origPos = new Float32Array(geom.attributes.position.array);
+      const swayFactors = new Float32Array(vCount);
+      const twistFactors = new Float32Array(vCount);
+      const microFactors = new Float32Array(vCount);
+      const hPhase28 = new Float32Array(vCount);
+      const hPhase20 = new Float32Array(vCount);
+      const hPhase45 = new Float32Array(vCount);
+
+      for (let j = 0; j < vCount; j++) {
+        const y = origPos[j * 3 + 1];
+        const heightRatio = Math.max(0, Math.min(1, y / height));
+        const factor = heightRatio * heightRatio;
+        swayFactors[j] = 0.32 * factor;
+        twistFactors[j] = 0.16 * factor;
+        microFactors[j] = 0.06 * factor;
+        hPhase28[j] = heightRatio * 2.8;
+        hPhase20[j] = heightRatio * 2.0;
+        hPhase45[j] = heightRatio * 4.5;
+      }
+
+      const phase = Math.random() * Math.PI * 2;
+      const speed = 1.1 + Math.random() * 0.6;
+
       blades.push({
         mesh,
         geom,
         posAttr: geom.attributes.position,
-        origX: Array.from(geom.attributes.position.array),
+        origPos,
+        swayFactors,
+        twistFactors,
+        microFactors,
+        hPhase28,
+        hPhase20,
+        hPhase45,
         height,
-        phase: Math.random() * Math.PI * 2,
-        speed: 1.1 + Math.random() * 0.6
+        phase,
+        phase15: phase * 1.5,
+        speed,
+        speedTwist: speed * 0.75,
+        speedMicro: speed * 2.2
       });
     }
 
@@ -1190,19 +1223,24 @@ export class DecorationManager {
         for (const b of item.blades) {
           const pos = b.posAttr;
           const arr = pos.array;
-          const orig = b.origX;
+          const orig = b.origPos;
           const count = pos.count;
+          const swayFactors = b.swayFactors;
+          const twistFactors = b.twistFactors;
+          const microFactors = b.microFactors;
+          const h28 = b.hPhase28;
+          const h20 = b.hPhase20;
+          const h45 = b.hPhase45;
+
+          const timeSway = time * b.speed + b.phase;
+          const timeTwist = time * b.speedTwist + b.phase;
+          const timeMicro = time * b.speedMicro + b.phase15;
 
           for (let i = 0; i < count; i++) {
             const idx = i * 3;
-            const y = orig[idx + 1];
-            const heightRatio = Math.max(0, Math.min(1, y / b.height));
-            const factor = heightRatio * heightRatio;
-
-            // Fluid drag travelling wave propagating from root upward with harmonic micro-ripples
-            const sway = Math.sin(time * b.speed + b.phase - heightRatio * 2.8) * 0.32 * factor;
-            const twist = Math.cos(time * b.speed * 0.75 + b.phase - heightRatio * 2.0) * 0.16 * factor;
-            const micro = Math.sin(time * b.speed * 2.2 + b.phase * 1.5 - heightRatio * 4.5) * 0.06 * factor;
+            const sway = Math.sin(timeSway - h28[i]) * swayFactors[i];
+            const twist = Math.cos(timeTwist - h20[i]) * twistFactors[i];
+            const micro = Math.sin(timeMicro - h45[i]) * microFactors[i];
 
             arr[idx] = orig[idx] + sway + micro;
             arr[idx + 2] = orig[idx + 2] + twist + micro * 0.5;
@@ -1241,16 +1279,19 @@ export class DecorationManager {
 
         const pulseScale = 1.0 - anemone.contractFactor * 0.45;
         const breath = Math.sin(time * 0.8) * 0.05;
+        const scaleY = pulseScale + breath;
+        const swayScaleZ = 0.16 * (1.0 - anemone.contractFactor * 0.6);
+        const swayScaleX = 0.14 * (1.0 - anemone.contractFactor * 0.6);
+        const curlBase = anemone.contractFactor * -0.85;
 
         for (const t of anemone.tentacles) {
-          const swayZ = Math.sin(time * t.speed + t.phase) * (0.16 * (1.0 - anemone.contractFactor * 0.6));
-          const swayX = Math.cos(time * t.speed * 0.85 + t.phase) * (0.14 * (1.0 - anemone.contractFactor * 0.6));
-          // When contracted, tentacles curl tightly inwards toward center
-          const curlInward = anemone.contractFactor * (-t.baseTilt * 0.85);
+          const swayZ = Math.sin(time * t.speed + t.phase) * swayScaleZ;
+          const swayX = Math.cos(time * t.speed * 0.85 + t.phase) * swayScaleX;
+          const curlInward = curlBase * t.baseTilt;
 
           t.pivot.rotation.z = t.baseTilt * pulseScale + swayZ + curlInward;
           t.pivot.rotation.x = swayX;
-          t.pivot.scale.set(1.0, pulseScale + breath, 1.0);
+          t.pivot.scale.y = scaleY;
         }
       } else if (item.type === "seafan") {
         // Organic sea fan swaying with oceanic current
