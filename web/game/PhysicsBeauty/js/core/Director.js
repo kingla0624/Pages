@@ -47,6 +47,7 @@ export class Director {
       { id: 7, inst: this.s0_planck, start: 67.5, end: 76.0 } // 尾声复用普朗克泡沫
     ];
 
+    this.camPos = new THREE.Vector3(0, 0, 5);
     this.lookTarget = new THREE.Vector3();
   }
 
@@ -109,8 +110,10 @@ export class Director {
    * 一镜到底相机连续三维运动路径
    */
   updateCameraPath(time) {
-    let camPos = new THREE.Vector3(0, 0, 5);
-    let target = new THREE.Vector3(0, 0, 0);
+    const camPos = this.camPos;
+    const target = this.lookTarget;
+    camPos.set(0, 0, 5);
+    target.set(0, 0, 0);
     let fov = 45;
 
     // ==========================================

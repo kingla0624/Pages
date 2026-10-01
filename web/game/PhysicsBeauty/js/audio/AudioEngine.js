@@ -67,8 +67,17 @@ export class AudioEngine {
   /**
    * 逐帧根据时间轴与场景触发动态音频
    */
-  update(time, chapterId) {
+  update(time, chapterId, isPlaying = true) {
     if (!this.ctx || this.isMuted) return;
+
+    // 平滑调节背景低音垫增益：播放时维持沉浸 0.25，暂停时柔和衰减至 0.05
+    if (this.droneGain) {
+      const targetGain = isPlaying ? 0.25 : 0.05;
+      this.droneGain.gain.setTargetAtTime(targetGain, this.ctx.currentTime, 0.15);
+    }
+
+    // 暂停状态下不触发新的离散音效
+    if (!isPlaying) return;
 
     // 章节切换时发出清脆机械 HUD 滴答声
     if (chapterId !== this.lastChapterId) {

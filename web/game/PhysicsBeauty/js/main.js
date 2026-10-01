@@ -96,14 +96,32 @@ class App {
       btnAudio.classList.toggle('muted', isMuted);
     });
 
-    // 全屏切换
-    const btnFullscreen = document.getElementById('btn-fullscreen');
-    btnFullscreen.addEventListener('click', () => {
+    // 全屏切换按钮
+    const toggleFullscreen = () => {
+      this.audio.init();
       if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(() => {});
       } else {
         document.exitFullscreen().catch(() => {});
       }
+    };
+
+    const btnFullscreen = document.getElementById('btn-fullscreen');
+    btnFullscreen.addEventListener('click', toggleFullscreen);
+
+    const btnIntroFs = document.getElementById('btn-intro-fullscreen');
+    if (btnIntroFs) {
+      btnIntroFs.addEventListener('click', toggleFullscreen);
+    }
+
+    document.addEventListener('fullscreenchange', () => {
+      this.width = window.innerWidth;
+      this.height = window.innerHeight;
+      this.camera.aspect = this.width / this.height;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(this.width, this.height);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      this.director.onResize(this.width, this.height);
     });
 
     // 章节快速跳转按钮
@@ -164,7 +182,7 @@ class App {
     this.hud.update(time);
 
     // 3. 更新音频引擎
-    this.audio.update(time, this.clock.currentChapterIndex);
+    this.audio.update(time, this.clock.currentChapterIndex, this.clock.isPlaying);
 
     // 4. 更新导演运镜与 3D 物理场景
     this.director.update(time);

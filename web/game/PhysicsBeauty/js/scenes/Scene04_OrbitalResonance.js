@@ -156,19 +156,24 @@ export class Scene04_OrbitalResonance {
     this.lines = new THREE.LineSegments(this.lineGeo, this.lineMat);
     this.group.add(this.lines);
 
-    // 预计算所有连线点，保证时间轴随意拖动完全一致
-    this.linePointsData = [];
+    // 一次性预填充满全部连线数据，避免逐帧重复遍历拷贝
     const totalSimYears = 8.0;
     for (let i = 0; i < this.maxLines; i++) {
       const year = (i / this.maxLines) * totalSimYears;
       const angleE = year * this.omegaEarth;
       const angleV = year * this.omegaVenus;
 
-      const pE = [Math.cos(angleE) * this.rEarth, Math.sin(angleE) * this.rEarth, 0];
-      const pV = [Math.cos(angleV) * this.rVenus, Math.sin(angleV) * this.rVenus, 0];
+      const baseIdx = i * 6;
+      this.linesPositions[baseIdx + 0] = Math.cos(angleE) * this.rEarth;
+      this.linesPositions[baseIdx + 1] = Math.sin(angleE) * this.rEarth;
+      this.linesPositions[baseIdx + 2] = 0;
 
-      this.linePointsData.push({ pE, pV });
+      this.linesPositions[baseIdx + 3] = Math.cos(angleV) * this.rVenus;
+      this.linesPositions[baseIdx + 4] = Math.sin(angleV) * this.rVenus;
+      this.linesPositions[baseIdx + 5] = 0;
     }
+    this.lineGeo.attributes.position.needsUpdate = true;
+    this.lineGeo.setDrawRange(0, 0);
   }
 
   update(time, opacity) {
@@ -192,22 +197,8 @@ export class Scene04_OrbitalResonance {
     const vy = Math.sin(angleV) * this.rVenus;
     this.venus.position.set(vx, vy, 0.01);
 
-    // 绘制连线
+    // 零开销更新连线渲染范围
     const targetLineCount = Math.floor(progress * this.maxLines);
-    for (let i = 0; i < targetLineCount; i++) {
-      const { pE, pV } = this.linePointsData[i];
-      const baseIdx = i * 6;
-
-      this.linesPositions[baseIdx + 0] = pE[0];
-      this.linesPositions[baseIdx + 1] = pE[1];
-      this.linesPositions[baseIdx + 2] = pE[2];
-
-      this.linesPositions[baseIdx + 3] = pV[0];
-      this.linesPositions[baseIdx + 4] = pV[1];
-      this.linesPositions[baseIdx + 5] = pV[2];
-    }
-
-    this.lineGeo.attributes.position.needsUpdate = true;
     this.lineGeo.setDrawRange(0, targetLineCount * 2);
 
     // 更新行星标牌位置与透明度

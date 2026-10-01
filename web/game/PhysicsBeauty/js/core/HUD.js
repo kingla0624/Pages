@@ -35,6 +35,7 @@ export class HUDController {
     this.elTimelineSlider = document.getElementById('timeline-slider');
     this.elTimelineProgress = document.getElementById('timeline-progress');
     this.pillButtons = document.querySelectorAll('.pill-btn');
+    this.lastActiveChapterId = -1;
 
     this.minScaleExp = -35;
     this.maxScaleExp = 26;
@@ -95,11 +96,14 @@ export class HUDController {
     this.elTimelineProgress.style.width = `${progressPct}%`;
     this.elTimelineSlider.value = time;
 
-    // 6. 更新高亮章节按钮
-    this.pillButtons.forEach((btn) => {
-      const cId = parseInt(btn.getAttribute('data-chapter'), 10);
-      btn.classList.toggle('active', cId === chapter.id);
-    });
+    // 6. 更新高亮章节按钮 (仅在章节变更时更新 DOM class)
+    if (this.lastActiveChapterId !== chapter.id) {
+      this.pillButtons.forEach((btn) => {
+        const cId = parseInt(btn.getAttribute('data-chapter'), 10);
+        btn.classList.toggle('active', cId === chapter.id);
+      });
+      this.lastActiveChapterId = chapter.id;
+    }
 
     // 7. 更新各场景动态字幕与特殊指示器
     this.updateCaptions(time, chapter);

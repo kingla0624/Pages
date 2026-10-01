@@ -12,7 +12,6 @@
   --hud-gold: #e5a956;
   --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
   --font-sans: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --letterbox-h: 46px;
 }
 
 * {
@@ -33,7 +32,7 @@ html, body {
 }
 
 /* ==========================================================================
-   3D 画布容器
+   3D 画布容器 (100% 满屏无缝铺满)
    ========================================================================== */
 #canvas-container {
   position: absolute;
@@ -50,30 +49,7 @@ html, body {
   height: 100%;
 }
 
-/* ==========================================================================
-   电影胶片边框与暗角遮罩
-   ========================================================================== */
-.letterbox {
-  position: absolute;
-  left: 0;
-  width: 100%;
-  height: var(--letterbox-h);
-  background-color: #000000;
-  z-index: 20;
-  pointer-events: none;
-}
-
-.letterbox.top-bar {
-  top: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.letterbox.bottom-bar {
-  bottom: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-/* 镜头暗角与微弱颗粒 */
+/* 镜头暗角与微弱氛围 (平滑无截断) */
 .film-vignette {
   position: absolute;
   top: 0;
@@ -82,7 +58,7 @@ html, body {
   height: 100%;
   pointer-events: none;
   z-index: 15;
-  background: radial-gradient(circle at center, transparent 65%, rgba(0, 0, 0, 0.7) 100%);
+  background: radial-gradient(circle at center, transparent 72%, rgba(0, 0, 0, 0.45) 100%);
 }
 
 /* 变形宽银幕特有的左右边缘微红暖光 */
@@ -106,7 +82,7 @@ html, body {
 }
 
 /* ==========================================================================
-   HUD 整体图层
+   HUD 整体图层 (100% 满屏覆盖，贴边自然留白)
    ========================================================================== */
 #hud-layer {
   position: absolute;
@@ -119,7 +95,7 @@ html, body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: calc(var(--letterbox-h) + 16px) 48px;
+  padding: clamp(18px, 2.8vh, 32px) clamp(24px, 3.2vw, 48px);
 }
 
 /* 顶部状态栏 */
@@ -226,6 +202,32 @@ html, body {
   font-weight: 300;
   letter-spacing: 0.18em;
   color: var(--hud-text-secondary);
+}
+
+.fullscreen-prompt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 28px;
+  padding: 8px 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 24px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: #c4c4cc;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fullscreen-prompt:hover {
+  background: rgba(230, 57, 38, 0.22);
+  border-color: var(--hud-accent-red);
+  color: #ffffff;
+  box-shadow: 0 0 16px var(--hud-accent-glow);
+  transform: scale(1.04);
 }
 
 /* 场景字幕 (通常位于左下方，与画面呼应) */
@@ -548,7 +550,7 @@ html, body {
    ========================================================================== */
 .interactive-panel {
   position: absolute;
-  bottom: calc(var(--letterbox-h) + 68px);
+  bottom: clamp(64px, 8.5vh, 88px);
   left: 50%;
   transform: translateX(-50%) translateY(10px);
   z-index: 50;
@@ -694,7 +696,7 @@ body:hover .interactive-panel,
    ========================================================================== */
 @media (max-width: 1024px) {
   #hud-layer {
-    padding: calc(var(--letterbox-h) + 12px) 24px;
+    padding: 16px 20px;
   }
   .main-title {
     font-size: 44px;

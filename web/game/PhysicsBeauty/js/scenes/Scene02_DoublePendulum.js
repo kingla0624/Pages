@@ -143,12 +143,16 @@ export class Scene02_DoublePendulum {
 
     // 摆杆连线与关节
     this.rodMat1 = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2, transparent: true });
-    this.rodGeo1 = new THREE.BufferGeometry().setFromPoints([this.pivot, this.pivot, this.pivot]);
+    this.rodPos1 = new Float32Array(3 * 3); // 3 个顶点 (pivot, joint, tip) * 3 分量
+    this.rodGeo1 = new THREE.BufferGeometry();
+    this.rodGeo1.setAttribute('position', new THREE.BufferAttribute(this.rodPos1, 3));
     this.rod1 = new THREE.Line(this.rodGeo1, this.rodMat1);
     this.group.add(this.rod1);
 
     this.rodMat2 = new THREE.LineBasicMaterial({ color: 0xe63926, linewidth: 2, transparent: true });
-    this.rodGeo2 = new THREE.BufferGeometry().setFromPoints([this.pivot, this.pivot, this.pivot]);
+    this.rodPos2 = new Float32Array(3 * 3);
+    this.rodGeo2 = new THREE.BufferGeometry();
+    this.rodGeo2.setAttribute('position', new THREE.BufferAttribute(this.rodPos2, 3));
     this.rod2 = new THREE.Line(this.rodGeo2, this.rodMat2);
     this.group.add(this.rod2);
 
@@ -191,21 +195,33 @@ export class Scene02_DoublePendulum {
     const h1 = this.history1[stepIdx];
     const h2 = this.history2[stepIdx];
 
-    const p1_joint = new THREE.Vector3(this.pivot.x + h1.p1[0], this.pivot.y + h1.p1[1], 0);
-    const p1_tip = new THREE.Vector3(this.pivot.x + h1.p2[0], this.pivot.y + h1.p2[1], 0);
+    const p1_jX = this.pivot.x + h1.p1[0];
+    const p1_jY = this.pivot.y + h1.p1[1];
+    const p1_tX = this.pivot.x + h1.p2[0];
+    const p1_tY = this.pivot.y + h1.p2[1];
 
-    const p2_joint = new THREE.Vector3(this.pivot.x + h2.p1[0], this.pivot.y + h2.p1[1], -0.01);
-    const p2_tip = new THREE.Vector3(this.pivot.x + h2.p2[0], this.pivot.y + h2.p2[1], -0.01);
+    const p2_jX = this.pivot.x + h2.p1[0];
+    const p2_jY = this.pivot.y + h2.p1[1];
+    const p2_tX = this.pivot.x + h2.p2[0];
+    const p2_tY = this.pivot.y + h2.p2[1];
 
-    // 更新连杆
-    this.rodGeo1.setFromPoints([this.pivot, p1_joint, p1_tip]);
-    this.rodGeo2.setFromPoints([this.pivot, p2_joint, p2_tip]);
+    // 更新连杆 1 顶点缓冲 (零内存分配)
+    this.rodPos1[0] = this.pivot.x; this.rodPos1[1] = this.pivot.y; this.rodPos1[2] = this.pivot.z;
+    this.rodPos1[3] = p1_jX;        this.rodPos1[4] = p1_jY;        this.rodPos1[5] = 0;
+    this.rodPos1[6] = p1_tX;        this.rodPos1[7] = p1_tY;        this.rodPos1[8] = 0;
+    this.rodGeo1.attributes.position.needsUpdate = true;
+
+    // 更新连杆 2 顶点缓冲 (零内存分配)
+    this.rodPos2[0] = this.pivot.x; this.rodPos2[1] = this.pivot.y; this.rodPos2[2] = this.pivot.z;
+    this.rodPos2[3] = p2_jX;        this.rodPos2[4] = p2_jY;        this.rodPos2[5] = -0.01;
+    this.rodPos2[6] = p2_tX;        this.rodPos2[7] = p2_tY;        this.rodPos2[8] = -0.01;
+    this.rodGeo2.attributes.position.needsUpdate = true;
 
     // 更新小球
-    this.ball1_1.position.copy(p1_joint);
-    this.ball1_2.position.copy(p1_tip);
-    this.ball2_1.position.copy(p2_joint);
-    this.ball2_2.position.copy(p2_tip);
+    this.ball1_1.position.set(p1_jX, p1_jY, 0);
+    this.ball1_2.position.set(p1_tX, p1_tY, 0);
+    this.ball2_1.position.set(p2_jX, p2_jY, -0.01);
+    this.ball2_2.position.set(p2_tX, p2_tY, -0.01);
 
     // 动态渲染历史尾迹
     const trailSpan = Math.min(stepIdx, this.maxTrailPoints);

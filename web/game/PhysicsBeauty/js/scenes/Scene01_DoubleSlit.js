@@ -162,13 +162,11 @@ export class Scene01_DoubleSlit {
     });
 
     this.instancedDots = new THREE.InstancedMesh(dotGeo, this.dotMat, this.maxParticles);
-    this.instancedDots.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.instancedDots.frustumCulled = false;
     this.instancedDots.count = 0;
     this.group.add(this.instancedDots);
 
-    // 预计算符合量子概率密度的粒子样本池
-    this.samplePool = [];
+    // 预计算符合量子概率密度的粒子落点并一次性填充至 InstancedMesh
     const dummy = new THREE.Object3D();
     const d = this.slitDistance;
     const L = this.screenDistance;
@@ -191,8 +189,9 @@ export class Scene01_DoubleSlit {
 
       dummy.position.set(x, y, z);
       dummy.updateMatrix();
-      this.samplePool.push(dummy.matrix.clone());
+      this.instancedDots.setMatrixAt(i, dummy.matrix);
     }
+    this.instancedDots.instanceMatrix.needsUpdate = true;
   }
 
   /**
@@ -236,17 +235,8 @@ export class Scene01_DoubleSlit {
     const progress = Math.min(Math.max((time - sceneStart) / sceneDuration, 0), 1);
     const targetCount = Math.floor(progress * this.maxParticles);
 
-    if (targetCount > this.currentParticleCount) {
-      for (let i = this.currentParticleCount; i < targetCount; i++) {
-        this.instancedDots.setMatrixAt(i, this.samplePool[i]);
-      }
-      this.instancedDots.instanceMatrix.needsUpdate = true;
-      this.instancedDots.count = targetCount;
-      this.currentParticleCount = targetCount;
-    } else if (targetCount < this.currentParticleCount) {
-      this.instancedDots.count = targetCount;
-      this.currentParticleCount = targetCount;
-    }
+    // 零 CPU 重传，直接控制 GPU 实例渲染数量
+    this.instancedDots.count = targetCount;
 
     this.group.visible = opacity > 0.001;
   }

@@ -25,9 +25,7 @@
   <!-- 3D 渲染主画布容器 -->
   <div id="canvas-container"></div>
 
-  <!-- 电影胶片边框与暗角遮罩 (Letterbox & Vignette) -->
-  <div class="letterbox top-bar"></div>
-  <div class="letterbox bottom-bar"></div>
+  <!-- 电影镜头光学暗角与边缘光晕 (Vignette & Flare) -->
   <div class="film-vignette"></div>
   <div class="anamorphic-flare"></div>
 
@@ -51,6 +49,10 @@
         <h1 class="main-title">物理之美</h1>
         <div class="english-title">THE BEAUTY OF PHYSICS</div>
         <div class="subtitle-desc">一镜到底：从普朗克长度，到整个宇宙</div>
+        <div class="fullscreen-prompt" id="btn-intro-fullscreen" title="进入全屏沉浸视听">
+          <svg viewBox="0 0 24 24" width="13" height="13"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" fill="currentColor"/></svg>
+          <span>开启全屏沉浸视听 · [F] 键切换</span>
+        </div>
       </div>
 
       <!-- 场景字幕容器 -->
