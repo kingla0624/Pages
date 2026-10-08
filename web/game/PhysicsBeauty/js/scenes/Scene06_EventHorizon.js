@@ -68,6 +68,13 @@ export class Scene06_EventHorizon {
 
           // 1. 黑洞中央纯黑阴影 (Event Horizon Shadow)
           if (r < rShadow) {
+            // 冲入视界穿透奇点时的纯白光爆转场 (Singularity Flash)
+            if (uZoom > 3.2) {
+              float flash = smoothstep(3.2, 7.2, uZoom);
+              vec3 flashCol = mix(vec3(0.0), vec3(1.0, 0.98, 0.94), flash);
+              gl_FragColor = vec4(flashCol, uOpacity);
+              return;
+            }
             // 视界内部纯黑
             float shadowEdge = smoothstep(rShadow - 0.015, rShadow, r);
             vec3 edgeGlow = vec3(0.9, 0.35, 0.1) * shadowEdge * 0.4;

@@ -60,17 +60,17 @@ export class Director {
   }
 
   /**
-   * 计算各场景平滑交叉淡入淡出透明度
+   * 计算各场景平滑过渡透明度（采用电影级暗场切镜，避免不同相机视角下的几何体交叉穿透）
    */
   updateSceneOpacities(time) {
-    const fadeDuration = 0.65; // 转场过渡融合时长
+    const fadeDuration = 0.35; // 电影级过渡淡入淡出时长
 
     // 普朗克场景 (含开头与结尾)
     let s0_op = 0;
     if (time <= 5.5) {
-      s0_op = time > 5.5 - fadeDuration ? (5.5 - time) / fadeDuration : 1.0;
+      s0_op = time > 5.5 - fadeDuration ? Math.max((5.5 - time) / fadeDuration, 0) : 1.0;
     } else if (time >= 67.5) {
-      s0_op = time < 67.5 + fadeDuration ? (time - 67.5) / fadeDuration : 1.0;
+      s0_op = time < 67.5 + fadeDuration ? Math.min((time - 67.5) / fadeDuration, 1) : 1.0;
     }
     this.s0_planck.update(time, s0_op);
 
@@ -99,10 +99,10 @@ export class Director {
     this.s6_blackHole.update(time, s6_op);
   }
 
-  calcOpacity(t, start, end, fade) {
-    if (t < start - fade || t > end + fade) return 0;
-    if (t < start + fade) return (t - (start - fade)) / (2 * fade);
-    if (t > end - fade) return ((end + fade) - t) / (2 * fade);
+  calcOpacity(t, start, end, fade = 0.35) {
+    if (t < start || t > end) return 0;
+    if (t < start + fade) return (t - start) / fade;
+    if (t > end - fade) return (end - t) / fade;
     return 1.0;
   }
 
