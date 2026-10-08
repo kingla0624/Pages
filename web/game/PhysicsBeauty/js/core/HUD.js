@@ -117,6 +117,7 @@ export class HUDController {
     this.elQuoteCard.classList.remove('visible');
     this.elEndCard.classList.remove('visible');
     this.elReadoutFormula.innerText = '';
+    if (this.elStrainCanvas) this.elStrainCanvas.style.display = 'none';
 
     // ==========================================
     // 00 PLANCK SCALE (0.0s - 5.5s)
@@ -166,8 +167,6 @@ export class HUDController {
         this.drawStrainWave(time);
       }
       return;
-    } else {
-      if (this.elStrainCanvas) this.elStrainCanvas.style.display = 'none';
     }
 
     // ==========================================

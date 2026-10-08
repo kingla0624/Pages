@@ -127,20 +127,28 @@ export class FishManager {
 
     this.schoolMesh = new THREE.InstancedMesh(geom, mat, count);
     this.schoolMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.schoolMesh.boundingSphere = new THREE.Sphere();
     this.scene.add(this.schoolMesh);
 
     this.schoolDummy = new THREE.Object3D();
     this.schoolMembers = [];
+    let maxOffset = 0;
 
     for (let i = 0; i < count; i++) {
-      this.schoolMembers.push({
+      const member = {
         offsetX: (Math.random() - 0.5) * 5.5,
         offsetY: (Math.random() - 0.5) * 2.5,
         offsetZ: (Math.random() - 0.5) * 5.5,
         phase: Math.random() * Math.PI * 2,
         speedScale: 0.9 + Math.random() * 0.25
-      });
+      };
+      this.schoolMembers.push(member);
+      maxOffset = Math.max(maxOffset, Math.hypot(member.offsetX, member.offsetY, member.offsetZ));
     }
+    // Fixed offsets plus maximum swim sway and the rotated fish geometry.
+    geom.computeBoundingSphere();
+    this.schoolMesh.boundingSphere.radius = maxOffset + Math.hypot(0.38, 0.18)
+      + geom.boundingSphere.center.length() + geom.boundingSphere.radius;
   }
 
   initAmbientMantaRay() {
@@ -186,6 +194,7 @@ export class FishManager {
     const centerX = Math.sin(loopT) * 16.0;
     const centerZ = -14.0 + Math.sin(loopT * 2) * 6.5;
     const centerY = 1.2 + Math.sin(loopT * 1.5) * 1.4;
+    this.schoolMesh.boundingSphere.center.set(centerX, centerY, centerZ);
 
     const nextT = loopT + 0.05;
     const nextX = Math.sin(nextT) * 16.0;

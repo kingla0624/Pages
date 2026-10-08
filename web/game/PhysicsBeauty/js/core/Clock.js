@@ -57,7 +57,8 @@ export class GlobalClock {
   updateChapterIndex() {
     for (let i = 0; i < CHAPTERS.length; i++) {
       const c = CHAPTERS[i];
-      if (this.currentTime >= c.start && this.currentTime < c.end) {
+      const isFinalEnd = i === CHAPTERS.length - 1 && this.currentTime === c.end;
+      if (this.currentTime >= c.start && (this.currentTime < c.end || isFinalEnd)) {
         if (this.currentChapterIndex !== i) {
           this.currentChapterIndex = i;
           this.onChapterChange?.(CHAPTERS[i]);

@@ -576,6 +576,7 @@ export class AquariumScene {
     this.bubbleDummy = new THREE.Object3D();
     this.bubbleInstancedMesh = new THREE.InstancedMesh(this.bubbleGeom, this.bubbleMat, this.maxBubbles);
     this.bubbleInstancedMesh.count = 0;
+    this.bubbleInstancedMesh.boundingSphere = new THREE.Sphere();
     this.bubbleInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     // Initialize identity matrix diagonal so off-diagonals are always 0
     const initMat = this.bubbleInstancedMesh.instanceMatrix.array;
@@ -621,7 +622,10 @@ export class AquariumScene {
 
   updateBubbles(delta, time) {
     const matArr = this.bubbleInstancedMesh.instanceMatrix.array;
-    for (let i = this.bubbles.length - 1; i >= 0; i--) {
+    let liveCount = 0;
+    let maxDistanceSq = 0;
+    let maxRadius = 0;
+    for (let i = 0; i < this.bubbles.length; i++) {
       const b = this.bubbles[i];
       b.y += b.vy * delta;
       const wobble = time * b.wobbleSpeed + b.phase;
@@ -645,22 +649,32 @@ export class AquariumScene {
       // Pop when reaching water surface
       if (b.y >= this.bounds.maxY - 0.1) {
         this.bubblePool.push(b);
-        this.bubbles.splice(i, 1);
         continue;
       }
 
+      // Compact live records and matrices together, preserving their order.
+      this.bubbles[liveCount] = b;
       // Direct column-major affine matrix write bypassing Object3D decomposition
-      const off = i * 16;
+      const off = liveCount++ * 16;
       matArr[off] = b.radius;
       matArr[off + 5] = b.radius;
       matArr[off + 10] = b.radius;
       matArr[off + 12] = b.x;
       matArr[off + 13] = b.y;
       matArr[off + 14] = b.z;
+
+      // Bound the uploaded transforms without a second per-instance matrix pass.
+      const x = matArr[off + 12], y = matArr[off + 13], z = matArr[off + 14];
+      maxDistanceSq = Math.max(maxDistanceSq, x * x + y * y + z * z);
+      maxRadius = Math.max(maxRadius, Math.abs(matArr[off]));
     }
 
-    this.bubbleInstancedMesh.count = this.bubbles.length;
+    this.bubbles.length = liveCount;
+    this.bubbleInstancedMesh.count = liveCount;
     this.bubbleInstancedMesh.instanceMatrix.needsUpdate = true;
+    this.bubbleInstancedMesh.boundingSphere.radius = liveCount > 0
+      ? Math.sqrt(maxDistanceSq) + maxRadius
+      : -1;
 
     // Decay active turbulence pulses
     for (let tIdx = this.activeTurbulences.length - 1; tIdx >= 0; tIdx--) {

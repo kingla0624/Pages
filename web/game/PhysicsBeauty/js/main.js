@@ -40,6 +40,7 @@ class App {
 
     // 3. 绑定 UI 交互事件
     this.bindEvents();
+    this.syncPlayStateUI();
 
     // 4. 启动主渲染循环
     this.animate = this.animate.bind(this);
@@ -141,8 +142,10 @@ class App {
         this.clock.togglePlay();
         this.syncPlayStateUI();
       } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
         this.clock.seek(this.clock.currentTime + 5.0);
       } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
         this.clock.seek(this.clock.currentTime - 5.0);
       } else if (e.code === 'KeyM') {
         const isMuted = this.audio.toggleMute();
@@ -176,7 +179,9 @@ class App {
     }
 
     // 1. 更新主时钟时间
+    const wasPlaying = this.clock.isPlaying;
     const time = this.clock.update();
+    if (wasPlaying !== this.clock.isPlaying) this.syncPlayStateUI();
 
     // 2. 更新 HUD 状态
     this.hud.update(time);

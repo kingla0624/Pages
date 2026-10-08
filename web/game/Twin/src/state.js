@@ -72,7 +72,27 @@ export class GoldenStateStore {
     }
 
     try {
-      return { ...cloneDefaultState(), ...JSON.parse(raw) };
+      const defaults = cloneDefaultState();
+      const saved = { ...defaults, ...JSON.parse(raw) };
+      // Repair values that older, unvalidated provider responses could persist.
+      for (const key of ["bond", "energy", "joy", "focus", "treats", "coins"]) {
+        if (!Number.isFinite(saved[key]) || saved[key] < 0) saved[key] = defaults[key];
+        if (["bond", "energy", "joy", "focus"].includes(key)) saved[key] = clamp(saved[key]);
+      }
+      saved.activeTask = { ...defaults.activeTask, ...saved.activeTask };
+      for (const key of ["praiseCount", "trainingCount"]) {
+        if (!Number.isSafeInteger(saved.activeTask[key]) || saved.activeTask[key] < 0) {
+          saved.activeTask[key] = defaults.activeTask[key];
+        }
+      }
+      saved.memory = Array.isArray(saved.memory) ? saved.memory.filter((item) => item && typeof item === "object").map((item) => ({
+        ...item,
+        tags: Array.isArray(item.tags) ? item.tags.filter((tag) => typeof tag === "string") : [],
+        timestamp: typeof item.timestamp === "string" && Number.isFinite(Date.parse(item.timestamp))
+          ? item.timestamp : defaults.memory[0].timestamp,
+      })).slice(0, 12) : defaults.memory;
+      saved.rules = Array.isArray(saved.rules) ? saved.rules.filter((rule) => typeof rule === "string") : defaults.rules;
+      return saved;
     } catch (error) {
       console.warn("Failed to parse saved state, resetting.", error);
       return cloneDefaultState();

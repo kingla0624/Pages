@@ -22,6 +22,7 @@ export class UIManager {
     this.inspectModal = null;
     this.shopModal = null;
     this.isWiping = false;
+    this.isPhotoMode = false;
 
     this.cacheDom();
     this.bindEvents();
@@ -118,8 +119,6 @@ export class UIManager {
     // Shop Tabs
     this.dom.shopTabs.forEach(tab => {
       tab.addEventListener("click", () => {
-        this.dom.shopTabs.forEach(t => t.classList.remove("active"));
-        tab.classList.add("active");
         this.renderShopTab(tab.getAttribute("data-tab"));
       });
     });
@@ -185,6 +184,7 @@ export class UIManager {
 
     canvasEl.addEventListener("pointerdown", (e) => {
       if (e.target.closest(".interactive-ui")) return; // Don't trigger if clicked on UI
+      this.lastCleanPos = null;
       this.handleCanvasInteraction(e);
     });
 
@@ -230,8 +230,8 @@ export class UIManager {
       if (f) {
         const hungerEl = document.querySelector("#fishHunger");
         const happinessEl = document.querySelector("#fishHappiness");
-        if (hungerEl) hungerEl.style.width = Math.round(f.hunger || 100) + "%";
-        if (happinessEl) happinessEl.style.width = Math.round(f.happiness || 100) + "%";
+        if (hungerEl) hungerEl.style.width = Math.round(f.hunger ?? 100) + "%";
+        if (happinessEl) happinessEl.style.width = Math.round(f.happiness ?? 100) + "%";
       }
     }
   }
@@ -367,8 +367,8 @@ export class UIManager {
     document.querySelector("#fishName").textContent = f.name;
     document.querySelector("#fishSpecies").textContent = cat.name;
     document.querySelector("#fishRarity").textContent = cat.rarity;
-    document.querySelector("#fishHunger").style.width = Math.round(f.hunger || 100) + "%";
-    document.querySelector("#fishHappiness").style.width = Math.round(f.happiness || 100) + "%";
+    document.querySelector("#fishHunger").style.width = Math.round(f.hunger ?? 100) + "%";
+    document.querySelector("#fishHappiness").style.width = Math.round(f.happiness ?? 100) + "%";
     document.querySelector("#fishDesc").textContent = cat.desc;
 
     this.dom.fishCard.classList.remove("is-hidden");
@@ -390,6 +390,9 @@ export class UIManager {
   }
 
   renderShopTab(tabName) {
+    this.dom.shopTabs.forEach(tab => {
+      tab.classList.toggle("active", tab.getAttribute("data-tab") === tabName);
+    });
     const container = this.dom.shopContent;
     container.innerHTML = "";
 
@@ -488,12 +491,14 @@ export class UIManager {
   }
 
   enterPhotoMode() {
+    this.isPhotoMode = true;
     this.dom.hud.classList.add("photo-mode");
     if (this.dom.photoControls) this.dom.photoControls.classList.remove("is-hidden");
     this.showToast("进入摄影模式：点击拍摄键可保存高清截屏");
   }
 
   exitPhotoMode() {
+    this.isPhotoMode = false;
     this.dom.hud.classList.remove("photo-mode");
     if (this.dom.photoControls) this.dom.photoControls.classList.add("is-hidden");
   }

@@ -78,6 +78,41 @@ function buildContextSummary(context) {
   ].join(" | ");
 }
 
+function validateExternalDecision(value) {
+  const isObject = (candidate) => candidate !== null && typeof candidate === "object" && !Array.isArray(candidate);
+  const strings = ["reply", "plan", "routeLabel", "moodLabel", "emotionLabel", "currentAction", "location"];
+  const fields = new Set([...strings, "focusTarget", "actions", "effects", "progress", "memory"]);
+  const actions = new Set([
+    "idle", "lookUser", "wag", "guard", "rest", "sit", "walkBowl", "eat",
+    "comeUser", "playBow", "fetch", "bringBack", "scan", "bark", "walk",
+  ]);
+  const fail = () => { throw new Error("External API returned an invalid decision."); };
+  if (!isObject(value) || Object.keys(value).some((key) => !fields.has(key))) fail();
+  for (const key of strings) {
+    if (key in value && typeof value[key] !== "string") fail();
+  }
+  if ("focusTarget" in value && !["user", "ball", "bowl"].includes(value.focusTarget)) fail();
+  if ("actions" in value && (!Array.isArray(value.actions) || value.actions.some((action) => !actions.has(action)))) fail();
+  if ("effects" in value) {
+    const effectKeys = new Set(["bond", "energy", "joy", "focus", "treats", "coins"]);
+    if (!isObject(value.effects) || Object.entries(value.effects).some(([key, amount]) =>
+      !effectKeys.has(key) || !Number.isFinite(amount) || Math.abs(amount) > Number.MAX_SAFE_INTEGER
+    )) fail();
+  }
+  if ("progress" in value) {
+    if (!isObject(value.progress) || Object.entries(value.progress).some(([key, amount]) =>
+      !["praise", "training"].includes(key) || !Number.isSafeInteger(amount) || amount < 0
+    )) fail();
+  }
+  if ("memory" in value) {
+    const memory = value.memory;
+    if (!isObject(memory) || Object.keys(memory).some((key) => !["kind", "title", "detail", "tags"].includes(key))) fail();
+    if (["kind", "title", "detail"].some((key) => typeof memory[key] !== "string")) fail();
+    if ("tags" in memory && (!Array.isArray(memory.tags) || memory.tags.some((tag) => typeof tag !== "string"))) fail();
+  }
+  return value;
+}
+
 class OpenAICompatibleAdapter {
   async generate({ config, routeLabel, prompt, fallbackDecision }) {
     if (!config.baseUrl || !config.model || !config.apiKey) {
@@ -122,7 +157,7 @@ class OpenAICompatibleAdapter {
 
     return {
       ...fallbackDecision,
-      ...JSON.parse(content),
+      ...validateExternalDecision(JSON.parse(content)),
       routeLabel,
     };
   }
@@ -143,6 +178,7 @@ class WorldGovernor {
         actions: ["guard", "lookUser", "wag"],
         focusTarget: "user",
         effects: { focus: 10, joy: -4 },
+        progress: { praise: 0, training: 0 },
         memory: {
           kind: "safety",
           title: "Unsafe request redirected",

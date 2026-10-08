@@ -677,6 +677,9 @@ html, body {
   .top-bar {
     flex-wrap: wrap;
   }
+  .stats-row {
+    flex-wrap: wrap;
+  }
   .action-dock {
     flex-wrap: wrap;
     border-radius: var(--radius-md);

@@ -55,32 +55,45 @@ let recognition = null;
 let lastFrame = null;
 let visionTimer = null;
 let lastVisualDecision = 0;
+let interactionQueue = Promise.resolve();
+let interactionGeneration = 0;
 
 function meter(element, value) {
   element.style.width = `${value}%`;
 }
 
 function renderRules(rules) {
-  ui.ruleList.innerHTML = rules.map((rule) => `<li>${rule}</li>`).join("");
+  ui.ruleList.replaceChildren(...rules.map((rule) => {
+    const item = document.createElement("li");
+    item.textContent = rule;
+    return item;
+  }));
 }
 
 function renderMemories(memory) {
-  ui.memoryList.innerHTML = memory
-    .map(
-      (item) => `
-        <article class="memory-item">
-          <strong>
-            <span>${item.title}</span>
-            <span>${formatTimestamp(item.timestamp)}</span>
-          </strong>
-          <p>${item.detail}</p>
-          <div class="tag-row">
-            ${item.tags.map((tag) => `<span class="tag">${tag}</span>`).join("")}
-          </div>
-        </article>
-      `
-    )
-    .join("");
+  ui.memoryList.replaceChildren(...memory.map((item) => {
+    const article = document.createElement("article");
+    article.className = "memory-item";
+    const heading = document.createElement("strong");
+    const title = document.createElement("span");
+    title.textContent = item.title;
+    const timestamp = document.createElement("span");
+    timestamp.textContent = formatTimestamp(item.timestamp);
+    heading.append(title, timestamp);
+    const detail = document.createElement("p");
+    detail.textContent = item.detail;
+    const tags = document.createElement("div");
+    tags.className = "tag-row";
+    // Older provider responses may have saved malformed tags before validation.
+    for (const tag of Array.isArray(item.tags) ? item.tags : []) {
+      const label = document.createElement("span");
+      label.className = "tag";
+      label.textContent = tag;
+      tags.append(label);
+    }
+    article.append(heading, detail, tags);
+    return article;
+  }));
 }
 
 function render() {
@@ -129,25 +142,36 @@ function visualSummaryFromMetrics(metrics) {
   return `${light}, ${motion}, ${tone}`;
 }
 
-async function handleInteraction(input, source = "text") {
+function handleInteraction(input, source = "text", options = {}) {
   const trimmed = input.trim();
   if (!trimmed) {
-    return;
+    return Promise.resolve();
   }
 
-  store.updatePerception(source, trimmed, { remember: source !== "vision" });
-  const snapshot = store.snapshot();
-  const decision = await router.decide({
-    snapshot,
-    latestInput: trimmed,
-    provider: ui.providerSelect.value,
-    providerConfig: providerConfig(),
-    visualSignal: snapshot.perception.vision,
+  const generation = interactionGeneration;
+  const provider = options.provider ?? ui.providerSelect.value;
+  const config = providerConfig();
+  interactionQueue = interactionQueue.then(async () => {
+    if (generation !== interactionGeneration) return;
+    // Take the snapshot after earlier decisions have committed their effects.
+    store.updatePerception(source, trimmed, { remember: source !== "vision" });
+    const snapshot = store.snapshot();
+    const decision = await router.decide({
+      snapshot,
+      latestInput: trimmed,
+      provider,
+      providerConfig: config,
+      visualSignal: snapshot.perception.vision,
+    });
+    if (generation !== interactionGeneration) return;
+    store.applyDecision(decision);
+    scene.runActions(decision.actions, decision.focusTarget);
+    speak(decision.reply);
+    render();
+  }).catch((error) => {
+    console.warn("Interaction failed.", error);
   });
-  store.applyDecision(decision);
-  scene.runActions(decision.actions, decision.focusTarget);
-  speak(decision.reply);
-  render();
+  return interactionQueue;
 }
 
 function speak(text) {
@@ -255,8 +279,9 @@ async function toggleCamera() {
 
 ui.chatForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  await handleInteraction(ui.chatInput.value, "text");
+  const input = ui.chatInput.value;
   ui.chatInput.value = "";
+  await handleInteraction(input, "text");
 });
 
 ui.providerSelect.addEventListener("change", () => {
@@ -289,13 +314,15 @@ quickInputs.forEach((button) => {
 });
 
 ui.resetMemoryBtn.addEventListener("click", () => {
+  interactionGeneration += 1;
+  interactionQueue = Promise.resolve();
   store.reset();
   render();
   scene.runActions(["scan", "wag"], "user");
 });
 
 ui.focusBallBtn.addEventListener("click", () => {
-  scene.runActions(["playBow", "fetch"], "ball");
+  handleInteraction("Let's play fetch.", "text", { provider: "local" });
 });
 
 ui.focusUserBtn.addEventListener("click", () => {
