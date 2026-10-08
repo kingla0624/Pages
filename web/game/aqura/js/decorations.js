@@ -1329,14 +1329,18 @@ export class DecorationManager {
     if (bubbleSystem) {
       for (const emitter of this.bubbleEmitters) {
         emitter.accum += delta * emitter.rate;
-        while (emitter.accum >= 1) {
-          emitter.accum -= 1;
+        if (emitter.accum >= 1) {
           emitter.parentGroup.getWorldPosition(_vDecWorldPos);
-          
-          const rx = _vDecWorldPos.x + (Math.random() - 0.5) * 0.3;
-          const rz = _vDecWorldPos.z + (Math.random() - 0.5) * 0.3;
-          const rad = emitter.minRadius + Math.random() * (emitter.maxRadius - emitter.minRadius);
-          bubbleSystem.spawnBubble(rx, _vDecWorldPos.y + 0.25, rz, rad);
+          const py = _vDecWorldPos.y + 0.25;
+          const px = _vDecWorldPos.x;
+          const pz = _vDecWorldPos.z;
+          while (emitter.accum >= 1) {
+            emitter.accum -= 1;
+            const rx = px + (Math.random() - 0.5) * 0.3;
+            const rz = pz + (Math.random() - 0.5) * 0.3;
+            const rad = emitter.minRadius + Math.random() * (emitter.maxRadius - emitter.minRadius);
+            bubbleSystem.spawnBubble(rx, py, rz, rad);
+          }
         }
       }
     }

@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { FISH_CATALOG, DECORATION_CATALOG, LIGHTING_THEMES } from "./state.js";
 
+const _vTapDefault = new THREE.Vector3(0, 0, -2);
+
 /**
  * Aqura UI & HUD Controller
  * Handles glassmorphism controls, tool switching, shop drawer, fish details card,
@@ -74,7 +76,7 @@ export class UIManager {
           this.foodManager.spawnFood((Math.random() - 0.5) * 3, -1.0 + (Math.random() - 0.5) * 2);
           this.showToast("🦐 投撒海粮！点击海面任意位置可继续投喂");
         } else if (tool === "tap") {
-          this.fishManager.sendWavePulse(new THREE.Vector3(0, 0, -2));
+          this.fishManager.sendWavePulse(_vTapDefault);
           this.showToast("💫 扰动水流！观察群鱼惊起与洋流感应");
         } else if (tool === "inspect") {
           if (this.fishManager.fishList.length > 0) {
@@ -290,7 +292,7 @@ export class UIManager {
     } else if (tool === "tap") {
       // Wave disturbance pulse
       const hit = this.scene.getRaycastPoint(e.clientX, e.clientY, 0);
-      const tapPos = hit || new THREE.Vector3(0, 0, this.scene.bounds.maxZ);
+      const tapPos = hit || _vTapDefault;
       this.fishManager.sendWavePulse(tapPos);
       this.scene.addWaterTurbulence(tapPos);
       if (this.decManager && this.decManager.triggerTouch) {

@@ -409,6 +409,10 @@ export class AquariumScene {
     // Precompute 1D harmonic phase tables and 512-entry pow curve for ultra-fast caustics rasterization
     this.causticsUArr = new Float32Array(128);
     this.causticsVArr = new Float32Array(128);
+    this.causticsSinA1 = new Float32Array(128);
+    this.causticsA1 = new Float32Array(128);
+    this.causticsUT06 = new Float32Array(128);
+    this.causticsUT04 = new Float32Array(128);
     for (let i = 0; i < 128; i++) {
       this.causticsUArr[i] = (i * 2 / 256) * Math.PI * 4;
       this.causticsVArr[i] = (i * 2 / 256) * Math.PI * 4;
@@ -432,12 +436,26 @@ export class AquariumScene {
     const uArr = this.causticsUArr;
     const vArr = this.causticsVArr;
     const powTable = this.causticsPowTable;
+    const sinA1Arr = this.causticsSinA1;
+    const a1Arr = this.causticsA1;
+    const uT06Arr = this.causticsUT06;
+    const uT04Arr = this.causticsUT04;
 
     const t = time * 1.5;
     const t07 = t * 0.7;
     const t05 = t * 0.5;
     const t06 = t * 0.6;
     const t04 = t * 0.4;
+
+    // Hoist column-dependent horizontal phase and trigonometry out of 2D loop
+    for (let xi = 0; xi < 128; xi++) {
+      const uVal = uArr[xi];
+      const a1 = uVal + t07;
+      a1Arr[xi] = a1;
+      sinA1Arr[xi] = Math.sin(a1);
+      uT06Arr[xi] = uVal + t06;
+      uT04Arr[xi] = (uVal + 12.566370614359172) - t04;
+    }
 
     for (let yi = 0; yi < 128; yi++) {
       const y = yi * 2;
@@ -449,13 +467,13 @@ export class AquariumScene {
 
       for (let xi = 0; xi < 128; xi++) {
         const x = xi * 2;
-        const uVal = uArr[xi];
-        const a1 = uVal + t07;
-        const a3 = uVal + vVal + t06;
-        const a4 = (uVal - vVal + 12.566370614359172) - t04; // 4 * PI
+        const a1 = a1Arr[xi];
+        const sinA1 = sinA1Arr[xi];
+        const a3 = uT06Arr[xi] + vVal;
+        const a4 = uT04Arr[xi] - vVal;
 
         const v1 = Math.sin(a1 + cosA2);
-        const v2 = Math.cos(a2 + Math.sin(a1));
+        const v2 = Math.cos(a2 + sinA1);
         const v3 = (Math.sin(a3) + Math.cos(a4)) * 0.5;
 
         // Core intensity mapped to 512-entry lookup table
@@ -559,6 +577,15 @@ export class AquariumScene {
     this.bubbleInstancedMesh = new THREE.InstancedMesh(this.bubbleGeom, this.bubbleMat, this.maxBubbles);
     this.bubbleInstancedMesh.count = 0;
     this.bubbleInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    // Initialize identity matrix diagonal so off-diagonals are always 0
+    const initMat = this.bubbleInstancedMesh.instanceMatrix.array;
+    for (let k = 0; k < this.maxBubbles; k++) {
+      const off = k * 16;
+      initMat[off] = 1.0;
+      initMat[off + 5] = 1.0;
+      initMat[off + 10] = 1.0;
+      initMat[off + 15] = 1.0;
+    }
     this.scene.add(this.bubbleInstancedMesh);
   }
 
@@ -593,12 +620,13 @@ export class AquariumScene {
   }
 
   updateBubbles(delta, time) {
-    const dummy = this.bubbleDummy;
+    const matArr = this.bubbleInstancedMesh.instanceMatrix.array;
     for (let i = this.bubbles.length - 1; i >= 0; i--) {
       const b = this.bubbles[i];
       b.y += b.vy * delta;
-      b.x += Math.sin(time * b.wobbleSpeed + b.phase) * 0.015;
-      b.z += Math.cos(time * b.wobbleSpeed + b.phase) * 0.015;
+      const wobble = time * b.wobbleSpeed + b.phase;
+      b.x += Math.sin(wobble) * 0.015;
+      b.z += Math.cos(wobble) * 0.015;
 
       // Deflect bubbles caught in fluid turbulence wakes
       for (const turb of this.activeTurbulences) {
@@ -621,10 +649,14 @@ export class AquariumScene {
         continue;
       }
 
-      dummy.position.set(b.x, b.y, b.z);
-      dummy.scale.setScalar(b.radius);
-      dummy.updateMatrix();
-      this.bubbleInstancedMesh.setMatrixAt(i, dummy.matrix);
+      // Direct column-major affine matrix write bypassing Object3D decomposition
+      const off = i * 16;
+      matArr[off] = b.radius;
+      matArr[off + 5] = b.radius;
+      matArr[off + 10] = b.radius;
+      matArr[off + 12] = b.x;
+      matArr[off + 13] = b.y;
+      matArr[off + 14] = b.z;
     }
 
     this.bubbleInstancedMesh.count = this.bubbles.length;
@@ -1314,10 +1346,12 @@ export class AquariumScene {
     this.updateSedimentDust(delta);
     if (this.godRayMeshes) {
       const rayLen = this.godRayMeshes.length;
+      const t08 = time * 0.8;
+      const t04 = time * 0.4;
       for (let i = 0; i < rayLen; i++) {
         const ray = this.godRayMeshes[i];
-        ray.mat.opacity = ray.baseOpacity * (0.85 + 0.15 * Math.sin(time * 0.8 + ray.phase));
-        ray.mesh.rotation.z = ray.baseRotZ + Math.sin(time * 0.4 + ray.phase) * 0.018;
+        ray.mat.opacity = ray.baseOpacity * (0.85 + 0.15 * Math.sin(t08 + ray.phase));
+        ray.mesh.rotation.z = ray.baseRotZ + Math.sin(t04 + ray.phase) * 0.018;
       }
     }
 

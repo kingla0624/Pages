@@ -38,6 +38,26 @@ export class FoodManager {
 
     this.rootGroup = new THREE.Group();
     this.scene.add(this.rootGroup);
+
+    // Pre-warm effectPool for zero runtime GC allocations
+    const EFFECT_POOL_SIZE = 16;
+    for (let i = 0; i < EFFECT_POOL_SIZE; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: this.heartTexture,
+        transparent: true,
+        opacity: 1.0,
+        depthWrite: false
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.visible = false;
+      this.scene.add(sprite);
+      this.effectPool.push({
+        sprite,
+        vy: 0.8,
+        opacity: 1.0,
+        life: 0
+      });
+    }
   }
 
   createEmojiTexture(text) {
@@ -121,13 +141,9 @@ export class FoodManager {
 
     if (this.effectPool.length > 0) {
       eff = this.effectPool.pop();
-      eff.sprite.material.map = baseTex;
-      eff.sprite.material.opacity = 1.0;
-      eff.sprite.material.needsUpdate = true;
-      eff.sprite.visible = true;
-      eff.vy = 0.8;
-      eff.opacity = 1;
-      eff.life = 1.0;
+    } else if (this.floatingEffects.length > 0) {
+      // Bounded pool: reclaim oldest active effect to guarantee zero runtime allocation
+      eff = this.floatingEffects.shift();
     } else {
       const mat = new THREE.SpriteMaterial({
         map: baseTex,
@@ -140,15 +156,22 @@ export class FoodManager {
       eff = {
         sprite,
         vy: 0.8,
-        opacity: 1,
+        opacity: 1.0,
         life: 1.0
       };
     }
 
+    eff.sprite.material.map = baseTex;
+    eff.sprite.material.opacity = 1.0;
+    eff.sprite.material.needsUpdate = true;
+    eff.sprite.visible = true;
+    eff.vy = 0.8;
+    eff.opacity = 1.0;
+    eff.life = 1.0;
+
     eff.sprite.position.copy(pos);
     eff.sprite.position.y += 0.3;
     eff.sprite.scale.set(0.6, 0.6, 0.6);
-    eff.sprite.material.opacity = 1.0;
 
     this.floatingEffects.push(eff);
   }

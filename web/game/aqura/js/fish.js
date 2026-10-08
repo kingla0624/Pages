@@ -2574,10 +2574,11 @@ export class FishManager {
 
     for (const f of this.fishList) {
       const fishPos = f.group.position;
-      const dist = fishPos.distanceTo(pPoint);
-      if (dist < 6.0) {
+      const d2 = fishPos.distanceToSquared(pPoint);
+      if (d2 < 36.0 && d2 > 0.000001) {
         f.scaredTimer = 2.0; // Burst dash away from wave disturbance
-        _vDiff.subVectors(fishPos, pPoint).normalize().multiplyScalar(3.2);
+        const invDist = 1.0 / Math.sqrt(d2);
+        _vDiff.subVectors(fishPos, pPoint).multiplyScalar(3.2 * invDist);
         f.velocity.add(_vDiff);
       }
     }
@@ -2621,18 +2622,17 @@ export class FishManager {
           }
 
           if (closestFood) {
-            const minDist = Math.sqrt(minDistSq);
             targetPos = closestFood.mesh.position;
-            // Strike acceleration when closing in on prey pellet
-            if (minDist < 1.4) {
+            // Strike acceleration when closing in on prey pellet (1.4 * 1.4 = 1.96)
+            if (minDistSq < 1.96) {
               targetSpeed = f.maxSpeed * 2.0;
               f.gaitTimer = 0.15; // Force burst acceleration phase
             } else {
               targetSpeed = f.maxSpeed * 1.5;
             }
 
-            // Check if reached food
-            if (minDist < 0.40) {
+            // Check if reached food (0.4 * 0.4 = 0.16)
+            if (minDistSq < 0.16) {
               const consumed = this.foodManager.consume(closestFood, pos, f.id);
               if (consumed) {
                 f.biteTimer = 0.35; // Trigger labriform braking flare
@@ -2761,9 +2761,7 @@ export class FishManager {
         const other = this.fishList[j];
         const d2 = pos.distanceToSquared(other.group.position);
         if (d2 < 0.36 && d2 > 0.000001) {
-          const d = Math.sqrt(d2);
-          _vDiff.subVectors(pos, other.group.position).normalize();
-          _vDiff.divideScalar(d);
+          _vDiff.subVectors(pos, other.group.position).multiplyScalar(1.0 / d2);
           _vSepForce.add(_vDiff);
         }
       }
@@ -2783,10 +2781,15 @@ export class FishManager {
       if (pos.y < minY) f.velocity.y += 2.2 * delta;
       if (pos.y > maxY) f.velocity.y -= 1.8 * delta;
 
-      // Speed limits
-      const currentSpeed = f.velocity.length();
-      if (currentSpeed > targetSpeed * 1.5) {
-        f.velocity.clampLength(0, targetSpeed * 1.5);
+      // Speed limits (single Math.sqrt and clamp scaling)
+      const maxSpeed = targetSpeed * 1.5;
+      const speedSq = f.velocity.lengthSq();
+      let currentSpeed;
+      if (speedSq > maxSpeed * maxSpeed) {
+        currentSpeed = maxSpeed;
+        f.velocity.multiplyScalar(maxSpeed / Math.sqrt(speedSq));
+      } else {
+        currentSpeed = Math.sqrt(speedSq);
       }
 
       // Update position
@@ -3203,8 +3206,10 @@ export class FishManager {
           const pecFreq = effectiveFreq * 1.15;
           const pecPhase = time * pecFreq + f.phaseOffset;
           const pecRowAmp = (f.scaredTimer > 0) ? 1.0 : (tGait < burstDuration ? burstFactor : 0.25);
-          let pecSweep = Math.sin(pecPhase) * (0.28 * pecRowAmp);
-          let pecFeather = Math.cos(pecPhase) * (0.18 * pecRowAmp);
+          const sinPec = Math.sin(pecPhase);
+          const cosPec = Math.cos(pecPhase);
+          let pecSweep = sinPec * (0.28 * pecRowAmp);
+          let pecFeather = cosPec * (0.18 * pecRowAmp);
 
           // Natural labriform braking flare when snapping prey
           if (f.biteTimer > 0) {
@@ -3213,13 +3218,14 @@ export class FishManager {
             pecFeather = 0.32;
           }
 
+          const pecRoll = sinPec * 0.08 * pecRowAmp;
           f.parts.pecLeft.rotation.y = 0.42 + pecSweep;
           f.parts.pecLeft.rotation.x = pecFeather;
-          f.parts.pecLeft.rotation.z = 0.10 + Math.sin(pecPhase) * 0.08 * pecRowAmp;
+          f.parts.pecLeft.rotation.z = 0.10 + pecRoll;
 
           f.parts.pecRight.rotation.y = -0.42 - pecSweep;
           f.parts.pecRight.rotation.x = -pecFeather;
-          f.parts.pecRight.rotation.z = -0.10 - Math.sin(pecPhase) * 0.08 * pecRowAmp;
+          f.parts.pecRight.rotation.z = -0.10 - pecRoll;
         }
 
         // 9. Sensory Barbels (Swaying in currents for Koi)
@@ -3233,10 +3239,13 @@ export class FishManager {
 
         // 10. Long Sensory Feelers (Swaying in currents for Angelfish)
         if (f.parts.feelers) {
+          const feelerSin = Math.sin(tWave - 1.6);
+          const feelerCos = Math.cos(tWave - 1.6);
+          const feelerLag = feelerSin * (0.16 * (0.4 + 0.6 * burstFactor));
+          const feelerRollBase = feelerCos * 0.09;
           for (const fl of f.parts.feelers) {
-            const feelerLag = Math.sin(tWave - 1.6) * (0.16 * (0.4 + 0.6 * burstFactor));
             fl.mesh.rotation.z = fl.baseRotZ + feelerLag;
-            fl.mesh.rotation.x = fl.baseRotX + Math.cos(tWave - 1.6) * 0.09 * fl.zSign;
+            fl.mesh.rotation.x = fl.baseRotX + feelerRollBase * fl.zSign;
           }
         }
 
