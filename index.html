@@ -513,32 +513,43 @@
         gl_FragColor = vec4(max(col, 0.0), 1.0);
         #endif
         #endif
+        #ifdef DIRECT_OUTPUT
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        #endif
       }
     `;
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
+    const supportsFloatColor = renderer.extensions.has('EXT_color_buffer_float');
+    const supportsHDR = supportsFloatColor || renderer.extensions.has('EXT_color_buffer_half_float');
 
     const scene    = new THREE.Scene();
     const camera   = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     const material = new THREE.ShaderMaterial({
       uniforms, vertexShader: vert, fragmentShader: frag,
+      defines: supportsHDR ? {} : { DIRECT_OUTPUT: 1 },
       depthTest: false, depthWrite: false
     });
     const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
     scene.add(screenMesh);
 
-    const composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.14, 0.15, 1.40);
-    composer.addPass(bloom);
-    composer.addPass(new OutputPass());
-    // Full-screen color passes never consume depth; avoid unused GPU storage.
-    for (const target of [
-      composer.renderTarget1, composer.renderTarget2, bloom.renderTargetBright,
-      ...bloom.renderTargetsHorizontal, ...bloom.renderTargetsVertical
-    ]) target.depthBuffer = false;
+    // Without float color attachments, draw to the canvas with the same output
+    // transform. Skip HDR bloom rather than allocating incomplete render targets.
+    const composer = supportsHDR ? new EffectComposer(renderer) : null;
+    const bloom = supportsHDR ? new UnrealBloomPass(new THREE.Vector2(1, 1), 0.14, 0.15, 1.40) : null;
+    if (composer) {
+      composer.addPass(new RenderPass(scene, camera));
+      composer.addPass(bloom);
+      composer.addPass(new OutputPass());
+      // Full-screen color passes never consume depth; avoid unused GPU storage.
+      for (const target of [
+        composer.renderTarget1, composer.renderTarget2, bloom.renderTargetBright,
+        ...bloom.renderTargetsHorizontal, ...bloom.renderTargetsVertical
+      ]) target.depthBuffer = false;
+    }
 
     // The camera, trajectories, opacity and stars are static. Cache their exact
     // per-pixel float32 values; only disk emission needs evaluating every frame.
@@ -556,7 +567,7 @@
       uniforms, vertexShader: vert, fragmentShader: frag, defines: { SHADE_CACHED_RAYS: 1 },
       depthTest: false, depthWrite: false, blending: THREE.NoBlending
     });
-    if (renderer.extensions.has('EXT_color_buffer_float')) {
+    if (supportsFloatColor) {
       rayCache = new THREE.WebGLRenderTarget(1, 1, {
         count: 4, type: THREE.FloatType, minFilter: THREE.NearestFilter,
         magFilter: THREE.NearestFilter, depthBuffer: false, stencilBuffer: false
@@ -603,7 +614,8 @@
           screenMesh.material = material;
         }
       }
-      composer.render();
+      if (composer) composer.render();
+      else renderer.render(scene, camera);
     }
 
     let quality = 1;   // keep a lower resolution only when it improves frame time
@@ -653,7 +665,7 @@
       const renderW = Math.min(MAX_PIXELS, Math.max(1, Math.floor(w * dpr)));
       const renderH = Math.min(Math.floor(MAX_PIXELS / renderW), Math.max(1, Math.floor(h * dpr)));
       renderer.setSize(renderW, renderH, false);
-      composer.setSize(renderW, renderH);
+      composer?.setSize(renderW, renderH);
       uniforms.uRes.value.set(renderW, renderH);
 
       // Leave room for the outer disk, including in a portrait viewport.
@@ -719,8 +731,8 @@
       pause();
       // Release stale target listeners while the context is still lost. Deferring
       // this until reset/resize tries to delete handles from the previous context.
-      composer.dispose();
-      for (const pass of composer.passes) pass.dispose();
+      composer?.dispose();
+      for (const pass of composer?.passes ?? []) pass.dispose();
       if (rayCache) rayCache.dispose();
       traceMaterial.dispose();
       cachedMaterial.dispose();
@@ -729,7 +741,7 @@
     });
     canvas.addEventListener('webglcontextrestored', () => {
       contextLost = false;
-      composer.reset();
+      composer?.reset();
       lastW = 0;
       last = performance.now();
       resize();
@@ -743,7 +755,16 @@
       requestFrame();
     });
 
-    resize();
+    let displayDprQuery;
+    function watchDisplayDpr() {
+      displayDprQuery?.removeEventListener('change', watchDisplayDpr);
+      displayDprQuery = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      displayDprQuery.addEventListener('change', watchDisplayDpr);
+      resize();
+    }
+
+    // Resolution can change without a resize, including while RAF is paused.
+    watchDisplayDpr();
     addEventListener('resize', resize);
     // A window resize event alone misses the case where the page is laid out at
     // zero size (hidden tab, collapsed container) and only gets a box later, so
