@@ -132,7 +132,8 @@ export function getTransitionState(time) {
   for (let to = 1; to < CHAPTERS.length; to++) {
     const boundary = CHAPTERS[to].start;
     const start = boundary - 0.35;
-    const end = boundary + 0.45;
+    // The opening card lingers; the later chapters clear their old frame sooner.
+    const end = boundary + (to === 1 ? 0.39 : to <= 5 ? 0.20 : 0.45);
     if (time >= start && time < end) {
       return { from: to - 1, to, start, end, progress: clamp01((time - start) / (end - start)), type: to <= 5 ? 'portal' : 'fade' };
     }

@@ -16,6 +16,11 @@ export class SceneTransition {
     this.titleTexture.colorSpace = THREE.SRGBColorSpace;
     this.titleTexture.generateMipmaps = false;
     this.titleTexture.minFilter = THREE.LinearFilter;
+    this.overlayCanvas = document.createElement('canvas');
+    this.overlayTexture = new THREE.CanvasTexture(this.overlayCanvas);
+    this.overlayTexture.colorSpace = THREE.SRGBColorSpace;
+    this.overlayTexture.generateMipmaps = false;
+    this.overlayTexture.minFilter = THREE.LinearFilter;
     this.drawTitle();
     document.fonts.ready.then(() => this.drawTitle());
     this.material = new THREE.ShaderMaterial({
@@ -26,6 +31,9 @@ export class SceneTransition {
         uBlurMix: { value: 0 },
         uTitle: { value: this.titleTexture },
         uTitleBounds: { value: this.titleBounds },
+        uChapterOverlay: { value: this.overlayTexture },
+        uShowChapterOverlay: { value: 0 },
+        uFilmHeight: { value: 1 },
         uTransition: { value: 0 },
         uShowTitle: { value: 0 },
         uProgress: { value: 0 },
@@ -49,6 +57,9 @@ export class SceneTransition {
         uniform float uBlurMix;
         uniform sampler2D uTitle;
         uniform vec4 uTitleBounds;
+        uniform sampler2D uChapterOverlay;
+        uniform float uShowChapterOverlay;
+        uniform float uFilmHeight;
         uniform float uTransition;
         uniform float uShowTitle;
         uniform float uProgress;
@@ -86,35 +97,53 @@ export class SceneTransition {
           return result < low || result > high ? a : b;
         }
 
+        vec2 filmUv(vec2 uv) {
+          return vec2(uv.x, (uv.y - 0.5) / uFilmHeight + 0.5);
+        }
+
+        vec3 framedColor(sampler2D source, vec2 uv, float antialias) {
+          vec2 inner = filmUv(uv);
+          float mask = step(0.0, inner.y) * step(inner.y, 1.0);
+          return chapterColor(source, clamp(inner, 0.0, 1.0), antialias) * mask;
+        }
+
         void main() {
           float p = uProgress;
           vec3 color;
           vec4 titleOverlay = vec4(0.0);
+          vec4 chapterOverlay = vec4(0.0);
+          vec2 innerUv = filmUv(vUv);
+          if (innerUv.y < 0.0 || innerUv.y > 1.0) {
+            gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+            return;
+          }
           if (uTransition < 0.5) {
-            color = chapterColor(uTo, vUv, uToAntialias);
+            color = chapterColor(uTo, innerUv, uToAntialias);
           } else if (uFadeMode > 0.5) {
             float outgoingGain = 1.0 - smoothstep(0.0, 0.5, p);
             float incomingGain = smoothstep(0.5, 1.0, p);
-            color = chapterColor(uFrom, vUv, uFromAntialias) * outgoingGain
-                  + chapterColor(uTo, vUv, uToAntialias) * incomingGain;
+            color = chapterColor(uFrom, innerUv, uFromAntialias) * outgoingGain
+                  + chapterColor(uTo, innerUv, uToAntialias) * incomingGain;
           } else {
             float reveal = smoothstep(0.0, 0.5, p);
             float scale = 1.0 - 0.94 * smoothstep(0.0, 1.0, p);
-            vec3 incoming = mix(chapterColor(uTo, vUv, uToAntialias),
-              texture2D(uBlurred, vUv).rgb, uBlurMix);
+            vec3 incoming = mix(chapterColor(uTo, innerUv, uToAntialias),
+              texture2D(uBlurred, innerUv).rgb, uBlurMix);
             color = incoming * reveal;
             vec2 cardUv = (vUv - 0.5) / scale + 0.5;
             vec2 edge = abs(cardUv - 0.5);
             float distanceToEdge = max(edge.x, edge.y);
             float aa = max(fwidth(distanceToEdge), 0.001);
             float mask = 1.0 - smoothstep(0.5 - aa, 0.5 + aa, distanceToEdge);
-            float fade = 1.0 - smoothstep(0.72, 1.0, p);
-            vec3 outgoing = chapterColor(uFrom, clamp(cardUv, 0.0, 1.0), uFromAntialias);
+            float fade = 1.0 - smoothstep(0.48, 0.94, p);
+            vec3 outgoing = framedColor(uFrom, clamp(cardUv, 0.0, 1.0), uFromAntialias);
             vec2 titleUv = (cardUv - uTitleBounds.xy) / uTitleBounds.zw;
             titleOverlay = texture2D(uTitle, clamp(titleUv, 0.0, 1.0));
             float titleMask = step(0.0, titleUv.x) * step(titleUv.x, 1.0)
                             * step(0.0, titleUv.y) * step(titleUv.y, 1.0);
             titleOverlay.a *= uShowTitle * titleMask * mask * fade;
+            chapterOverlay = texture2D(uChapterOverlay, clamp(cardUv, 0.0, 1.0));
+            chapterOverlay.a *= uShowChapterOverlay * mask * fade;
             float border = smoothstep(0.5 - aa * 3.0, 0.5 - aa, distanceToEdge) * mask;
             outgoing += vec3(0.18) * border * smoothstep(0.0, 0.2, p);
             color = mix(color, outgoing, mask * fade);
@@ -125,6 +154,8 @@ export class SceneTransition {
           // DOM titles are display colors. Match their brightness during the handoff.
           gl_FragColor.rgb = mix(gl_FragColor.rgb,
             linearToOutputTexel(vec4(titleOverlay.rgb, 1.0)).rgb, titleOverlay.a);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb,
+            linearToOutputTexel(vec4(chapterOverlay.rgb, 1.0)).rgb, chapterOverlay.a);
         }
       `,
       depthTest: false,
@@ -178,11 +209,18 @@ export class SceneTransition {
     const bottom = Math.min(window.innerHeight, Math.max(...lines.map(line => line.rect.bottom)) + 24);
     const width = Math.max(1, right - left);
     const height = Math.max(1, bottom - top);
-    this.titleCanvas.width = Math.ceil(width * ratio);
-    this.titleCanvas.height = Math.ceil(height * ratio);
+    const canvasWidth = Math.ceil(width * ratio);
+    const canvasHeight = Math.ceil(height * ratio);
+    if (this.titleCanvas.width !== canvasWidth || this.titleCanvas.height !== canvasHeight) {
+      this.titleTexture.dispose();
+      this.titleCanvas.width = canvasWidth;
+      this.titleCanvas.height = canvasHeight;
+    }
     this.titleBounds.set(left / window.innerWidth, 1 - bottom / window.innerHeight,
       width / window.innerWidth, height / window.innerHeight);
     const ctx = this.titleCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.titleCanvas.width, this.titleCanvas.height);
     ctx.setTransform(this.titleCanvas.width / width, 0, 0, this.titleCanvas.height / height, 0, 0);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
@@ -240,7 +278,7 @@ export class SceneTransition {
     const previousTarget = renderer.getRenderTarget();
     try {
       if (transition) {
-        drawChapter(transition.from, Math.min(time, transition.start), this.fromTarget);
+        drawChapter(transition.from, time, this.fromTarget);
         drawChapter(transition.to, Math.max(time, transition.start), this.toTarget);
       } else {
         drawChapter(chapterId, time, this.toTarget);
@@ -264,6 +302,26 @@ export class SceneTransition {
       this.material.uniforms.uBlurMix.value = THREE.MathUtils.smoothstep(blurRadius, 0, 1.5);
       this.material.uniforms.uTransition.value = transition ? 1 : 0;
       this.material.uniforms.uShowTitle.value = transition?.from === 0 ? 1 : 0;
+      const showCounter = transition?.from === 4 && transition.type === 'portal';
+      if (showCounter) {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const ratio = Math.min(1, 2048 / width, 1152 / height);
+        const w = Math.max(1, Math.ceil(width * ratio));
+        const h = Math.max(1, Math.ceil(height * ratio));
+        if (this.overlayCanvas.width !== w || this.overlayCanvas.height !== h) {
+          this.overlayTexture.dispose();
+          this.overlayCanvas.width = w;
+          this.overlayCanvas.height = h;
+        }
+        const ctx = this.overlayCanvas.getContext('2d');
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+        ctx.setTransform(w / width, 0, 0, h / height, 0, 0);
+        this.drawOrbitCounter?.(ctx, time, width, height);
+        this.overlayTexture.needsUpdate = true;
+      }
+      this.material.uniforms.uShowChapterOverlay.value = showCounter ? 1 : 0;
       this.material.uniforms.uProgress.value = p;
       this.material.uniforms.uFadeMode.value = transition?.type === 'fade' ? 1 : 0;
       // Geometry chapters need line filtering; procedural fields and galaxy points retain their detail.

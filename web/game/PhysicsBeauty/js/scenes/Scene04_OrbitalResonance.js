@@ -17,7 +17,7 @@ export class Scene04_OrbitalResonance {
     this.omegaEarth = (8.0 / 8.0) * (Math.PI * 2.0); // 8 年 8 圈
     this.omegaVenus = (13.0 / 8.0) * (Math.PI * 2.0); // 8 年 13 圈
 
-    this.maxLines = 600; // 保留五瓣细节，让单条连线与暗部空隙仍可辨认
+    this.maxLines = 320; // 保留完整八年五瓣结构，同时给历史连线留下可辨认的暗部空隙
     this.linesPositions = new Float32Array(this.maxLines * 2 * 3);
 
     this.initSun();
@@ -124,25 +124,74 @@ export class Scene04_OrbitalResonance {
 
     this.group.add(this.venus, this.earth);
 
-    // 行星文字标牌 Sprite
-    const createLabel = (text) => {
+    // 标签字号按最终电影画幅的 CSS 像素保持 20px，不随镜头退远而缩成线网噪点。
+    const createLabel = (text, avoidLabel = null) => {
       const c = document.createElement('canvas');
-      c.width = 128;
-      c.height = 64;
+      c.width = 192;
+      c.height = 96;
       const x = c.getContext('2d');
-      x.font = '500 24px "Noto Sans SC", sans-serif';
-      x.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      x.fillText(text, 10, 42);
+      x.font = '600 40px "Noto Sans SC", sans-serif';
+      x.textAlign = 'center';
+      x.textBaseline = 'middle';
+      x.lineJoin = 'round';
+      x.strokeStyle = 'rgba(0, 0, 0, 0.95)';
+      x.lineWidth = 7;
+      x.shadowColor = 'rgba(0, 0, 0, 0.9)';
+      x.shadowBlur = 9;
+      x.strokeText(text, 96, 48);
+      x.shadowBlur = 0;
+      x.fillStyle = 'rgba(255, 255, 255, 0.95)';
+      x.fillText(text, 96, 48);
       const tex = new THREE.CanvasTexture(c);
       tex.colorSpace = THREE.SRGBColorSpace;
-      const spMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+      const spMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false });
       const sp = new THREE.Sprite(spMat);
-      sp.scale.set(0.6, 0.3, 1.0);
+      sp.userData.anchor = new THREE.Vector3();
+      sp.renderOrder = 10;
+      sp.frustumCulled = false;
+      const size = new THREE.Vector2();
+      const viewPosition = new THREE.Vector3();
+      const projectedAnchor = new THREE.Vector3();
+      const otherAnchor = new THREE.Vector3();
+      sp.onBeforeRender = (renderer, scene, camera) => {
+        renderer.getSize(size);
+        const height = camera.userData.displayHeight ?? size.y;
+        const width = camera.userData.displayWidth ?? size.x;
+        viewPosition.copy(sp.userData.anchor).applyMatrix4(camera.matrixWorldInverse);
+        const unitsPerPixel = 2 * Math.abs(viewPosition.z) / (camera.projectionMatrix.elements[5] * height);
+        const scale = 20 / 40 * unitsPerPixel;
+        sp.scale.set(c.width * scale, c.height * scale, 1);
+        sp.position.copy(sp.userData.anchor);
+        const direction = sp.userData.anchor.x >= 0 ? 1 : -1;
+        const cameraAxes = camera.matrixWorld.elements;
+        let verticalOffset = 15;
+        if (avoidLabel) {
+          projectedAnchor.copy(sp.userData.anchor).project(camera);
+          otherAnchor.copy(avoidLabel.userData.anchor).project(camera);
+          if (Math.abs(projectedAnchor.x - otherAnchor.x) * width / 2 < 80 &&
+              Math.abs(projectedAnchor.y - otherAnchor.y) * height / 2 < 40) verticalOffset = -18;
+        }
+        for (let axis = 0; axis < 3; axis++) {
+          sp.position.setComponent(axis, sp.position.getComponent(axis) + unitsPerPixel *
+            (direction * 36 * cameraAxes[axis] + verticalOffset * cameraAxes[axis + 4]));
+        }
+        // 保持字形在画幅内；窄屏中邻近标签分置上下，不牺牲固定字号。
+        projectedAnchor.copy(sp.position).project(camera);
+        const safeX = Math.max(0, 1 - 60 / width);
+        const safeY = Math.max(0, 1 - 50 / height);
+        const offsetX = (THREE.MathUtils.clamp(projectedAnchor.x, -safeX, safeX) - projectedAnchor.x) * width / 2;
+        const offsetY = (THREE.MathUtils.clamp(projectedAnchor.y, -safeY, safeY) - projectedAnchor.y) * height / 2;
+        for (let axis = 0; axis < 3; axis++) {
+          sp.position.setComponent(axis, sp.position.getComponent(axis) + unitsPerPixel *
+            (offsetX * cameraAxes[axis] + offsetY * cameraAxes[axis + 4]));
+        }
+        sp.updateMatrixWorld();
+      };
       return sp;
     };
 
     this.labelVenus = createLabel('金星');
-    this.labelEarth = createLabel('地球');
+    this.labelEarth = createLabel('地球', this.labelVenus);
     this.group.add(this.labelVenus, this.labelEarth);
   }
 
@@ -150,20 +199,76 @@ export class Scene04_OrbitalResonance {
    * 4. 动态连线几何体
    */
   initConnectingLines() {
+    // 每根连线用四顶点 ribbon，解析柔边提供可控的 CSS 线宽和微弱光晕。
     this.lineGeo = new THREE.BufferGeometry();
-    this.lineGeo.setAttribute('position', new THREE.BufferAttribute(this.linesPositions, 3));
-    const colors = new Float32Array(this.maxLines * 2 * 3);
+    const starts = new Float32Array(this.maxLines * 4 * 3);
+    const ends = new Float32Array(this.maxLines * 4 * 3);
+    const positions = new Float32Array(this.maxLines * 4 * 3);
+    const colors = new Float32Array(this.maxLines * 4 * 3);
+    const sides = new Float32Array(this.maxLines * 4);
+    const lineIndices = new Float32Array(this.maxLines * 4);
+    const indices = [];
+    this.lineGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    this.lineGeo.setAttribute('segmentStart', new THREE.BufferAttribute(starts, 3));
+    this.lineGeo.setAttribute('segmentEnd', new THREE.BufferAttribute(ends, 3));
     this.lineGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-    this.lineMat = new THREE.LineBasicMaterial({
-      color: 0xffffff,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0.25,
-      depthWrite: false
+    this.lineGeo.setAttribute('side', new THREE.BufferAttribute(sides, 1));
+    this.lineGeo.setAttribute('lineIndex', new THREE.BufferAttribute(lineIndices, 1));
+    this.lineMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uResolution: { value: new THREE.Vector2(1, 1) },
+        uHalfWidth: { value: 1.8 },
+        uOpacity: { value: 0.20 },
+        uLineCount: { value: 0 }
+      },
+      vertexShader: `
+        attribute vec3 segmentStart;
+        attribute vec3 segmentEnd;
+        attribute vec3 color;
+        attribute float side;
+        attribute float lineIndex;
+        uniform vec2 uResolution;
+        uniform float uHalfWidth;
+        varying vec3 vColor;
+        varying float vSide;
+        varying float vLineIndex;
+        void main() {
+          vec4 clip = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          vec4 start = projectionMatrix * modelViewMatrix * vec4(segmentStart, 1.0);
+          vec4 end = projectionMatrix * modelViewMatrix * vec4(segmentEnd, 1.0);
+          vec2 delta = (end.xy / end.w - start.xy / start.w) * uResolution;
+          vec2 normal = vec2(-delta.y, delta.x) / max(length(delta), 0.00001);
+          clip.xy += normal * side * uHalfWidth * 2.0 / uResolution * clip.w;
+          gl_Position = clip;
+          vColor = color;
+          vSide = side;
+          vLineIndex = lineIndex;
+        }`,
+      fragmentShader: `
+        uniform float uOpacity;
+        uniform float uLineCount;
+        varying vec3 vColor;
+        varying float vSide;
+        varying float vLineIndex;
+        void main() {
+          float d = abs(vSide);
+          float profile = (0.90 * exp(-14.0 * d * d) + 0.055 * exp(-3.0 * d * d)) * (1.0 - smoothstep(0.82, 1.0, d));
+          float age = max(0.0, uLineCount - 1.0 - vLineIndex);
+          // 历史保持暗灰，刚画出的连线轻微提亮；全八年的五瓣几何仍完整保留。
+          float emphasis = 0.52 + 0.75 * exp(-age / 4.0);
+          gl_FragColor = vec4(vColor, profile * emphasis * uOpacity);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide
     });
-
-    this.lines = new THREE.LineSegments(this.lineGeo, this.lineMat);
+    this.lines = new THREE.Mesh(this.lineGeo, this.lineMat);
+    this.lines.frustumCulled = false;
+    this.lines.onBeforeRender = (renderer, scene, camera) => {
+      const resolution = this.lineMat.uniforms.uResolution.value;
+      renderer.getSize(resolution);
+      resolution.set(camera.userData.displayWidth ?? resolution.x, camera.userData.displayHeight ?? resolution.y);
+    };
     this.group.add(this.lines);
 
     // 一次性预填充满全部连线数据，避免逐帧重复遍历拷贝
@@ -188,10 +293,19 @@ export class Scene04_OrbitalResonance {
       // 以低饱和暖色点缀冷灰连线，避免多次叠加变成实心橙盘。
       const warmth = 0.5 + 0.5 * Math.sin(i * 0.63);
       lineColor.copy(coolColor).lerp(warmColor, warmth * warmth);
-      colors[baseIdx + 0] = colors[baseIdx + 3] = lineColor.r;
-      colors[baseIdx + 1] = colors[baseIdx + 4] = lineColor.g;
-      colors[baseIdx + 2] = colors[baseIdx + 5] = lineColor.b;
+      for (let vertex = 0; vertex < 4; vertex++) {
+        const offset = (i * 4 + vertex) * 3;
+        starts.set(this.linesPositions.subarray(baseIdx, baseIdx + 3), offset);
+        ends.set(this.linesPositions.subarray(baseIdx + 3, baseIdx + 6), offset);
+        positions.set(vertex < 2 ? this.linesPositions.subarray(baseIdx, baseIdx + 3) : this.linesPositions.subarray(baseIdx + 3, baseIdx + 6), offset);
+        colors.set([lineColor.r, lineColor.g, lineColor.b], offset);
+        sides[i * 4 + vertex] = vertex % 2 === 0 ? -1 : 1;
+        lineIndices[i * 4 + vertex] = i;
+      }
+      const vertex = i * 4;
+      indices.push(vertex, vertex + 1, vertex + 2, vertex + 2, vertex + 1, vertex + 3);
     }
+    this.lineGeo.setIndex(indices);
     this.lineGeo.attributes.position.needsUpdate = true;
     this.lineGeo.setDrawRange(0, 0);
   }
@@ -216,11 +330,12 @@ export class Scene04_OrbitalResonance {
 
     // 零开销更新连线渲染范围
     const targetLineCount = Math.floor(progress * this.maxLines);
-    this.lineGeo.setDrawRange(0, targetLineCount * 2);
+    this.lineGeo.setDrawRange(0, targetLineCount * 6);
+    this.lineMat.uniforms.uLineCount.value = targetLineCount;
 
     // 更新行星标牌位置与透明度
-    this.labelEarth.position.set(ex + 0.28, ey + 0.14, 0.05);
-    this.labelVenus.position.set(vx + 0.28, vy + 0.14, 0.05);
+    this.labelEarth.userData.anchor.set(ex, ey, 0.05);
+    this.labelVenus.userData.anchor.set(vx, vy, 0.05);
     this.labelEarth.material.opacity = opacity * 0.88;
     this.labelVenus.material.opacity = opacity * 0.88;
 
@@ -230,7 +345,7 @@ export class Scene04_OrbitalResonance {
     this.earthMat.opacity = opacity;
     this.orbitMat.opacity = opacity * 0.28;
     this.bgMat.opacity = opacity * 0.8;
-    this.lineMat.opacity = opacity * 0.25;
+    this.lineMat.uniforms.uOpacity.value = opacity * 0.20;
     this.sunGlow.material.opacity = opacity * 0.75;
 
     this.group.visible = opacity > 0.001;

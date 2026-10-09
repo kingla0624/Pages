@@ -1,4 +1,4 @@
-import { CHAPTERS, MERGER_TIME, getChapterProgress, getGravitationalWaveState, getOrbitYears, smoothstep } from './Timeline.js';
+import { CHAPTERS, MERGER_TIME, getChapterProgress, getGravitationalWaveState, getOrbitYears, getTransitionState, smoothstep } from './Timeline.js';
 
 /** Film captions, telemetry and reveal timing, all derived from the playback clock. */
 export class HUDController {
@@ -118,6 +118,7 @@ export class HUDController {
     this.elReadoutFormula.textContent = '';
     this.elStrainCanvas.style.display = 'none';
     this.elIntroFullscreen.style.pointerEvents = 'none';
+    this.elSceneCaption.classList.remove('centered');
 
     if (chapter.id === 0) {
       // The frame compositor takes over this title at 5.65s without a fade/reappearance.
@@ -141,7 +142,7 @@ export class HUDController {
     }
 
     const elapsed = getChapterProgress(chapter.id, time) * (chapter.end - chapter.start);
-    const chapterFade = 1 - smoothstep(chapter.end - 0.7, chapter.end - 0.2, time);
+    let chapterFade = 1 - smoothstep(chapter.end - 0.7, chapter.end - 0.2, time);
     const tagOpacity = smoothstep(0.8, 1.3, elapsed);
     let mainOpacity = smoothstep(1.5, 2.3, elapsed);
     let subOpacity = smoothstep(7.2, 7.9, elapsed);
@@ -170,7 +171,10 @@ export class HUDController {
       tag = '04 · ORBITAL RESONANCE';
       main = '地球 8 圈，金星约 13 圈，\n连线开出一朵五瓣花';
       sub = '接近整数比的周期，留下太阳系的数学几何';
-      this.setVisibility(this.elOrbitCounter, tagOpacity * chapterFade);
+      // The portal carries this counter in its departing frame, including before
+      // the chapter boundary; retaining the DOM copy would draw it twice.
+      const departing = getTransitionState(time)?.from === chapter.id;
+      this.setVisibility(this.elOrbitCounter, departing ? 0 : tagOpacity * chapterFade);
       this.elOrbitYearVal.textContent = getOrbitYears(time).toFixed(1);
     } else if (chapter.id === 5) {
       tag = '05 · COSMIC WEB';
@@ -178,12 +182,14 @@ export class HUDController {
         main = '每一个光点，\n都是一个星系';
         sub = '可观测宇宙，直径约 930 亿光年';
         mainOpacity *= 1 - smoothstep(6.6, 7.1, elapsed);
-        subOpacity = smoothstep(4.8, 5.5, elapsed) * (1 - smoothstep(6.6, 7.1, elapsed));
+        subOpacity = smoothstep(2.8, 3.5, elapsed) * (1 - smoothstep(6.6, 7.1, elapsed));
       } else {
-        main = '走近一个星系……';
-        sub = '星系中心，可能藏着超大质量黑洞';
+        main = '而在许多星系的中心……';
+        sub = '';
         mainOpacity = smoothstep(7.1, 7.7, elapsed);
-        subOpacity = smoothstep(8.1, 8.7, elapsed);
+        subOpacity = 0;
+        chapterFade = 1 - smoothstep(chapter.end - 0.35, chapter.end - 0.2, time);
+        this.elSceneCaption.classList.add('centered');
       }
     } else if (chapter.id === 6) {
       tag = '06 · EVENT HORIZON';
@@ -208,6 +214,30 @@ export class HUDController {
     this.reveal(this.elCaptionTag, tagOpacity);
     this.reveal(this.elCaptionMain, mainOpacity);
     this.reveal(this.elCaptionSub, subOpacity);
+  }
+
+  /** Paint the departing orbit telemetry in the old frame's CSS layout.
+   * Its value shares the model clock, including the ideal eight-year completion.
+   */
+  drawOrbitCounter(ctx, time, width, height) {
+    const ratio = this.elOrbitCounter.querySelector('.orbit-ratio');
+    const years = this.elOrbitCounter.querySelector('.orbit-years');
+    ctx.save();
+    ctx.scale(width / window.innerWidth, height / window.innerHeight);
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (const [element, text] of [
+      [ratio, ratio.textContent.trim()],
+      [years, `${getOrbitYears(time).toFixed(1)} 年`]
+    ]) {
+      const bounds = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      ctx.fillStyle = style.color;
+      ctx.letterSpacing = style.letterSpacing;
+      ctx.fillText(text, bounds.right, bounds.top + bounds.height / 2);
+    }
+    ctx.restore();
   }
 
   drawStrainWave(time) {

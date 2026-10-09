@@ -47,12 +47,12 @@ export class Director {
     this.lookTarget = new THREE.Vector3();
     this.cosmicFocusTarget = new THREE.Vector3();
 
-    // 漫游终点与切线，按随后 3 秒俯冲的归一化时间换算
+    // 先退远观察整体，再从连续的终点与切线进入星系近景。
     const sinAngle = Math.sin(0.5);
     const cosAngle = Math.cos(0.5);
-    const rushAngleRate = 0.5 * 3.0 / 7.0;
-    this.cosmicRushStart = new THREE.Vector3(12 * sinAngle, 4.0, 14 * cosAngle);
-    this.cosmicRushTangent = new THREE.Vector3(12 * cosAngle * rushAngleRate, 0, -14 * sinAngle * rushAngleRate);
+    const rushAngleRate = 0.5 * 2.8 / 7.2;
+    this.cosmicRushStart = new THREE.Vector3(17 * sinAngle, 6.0, 20 * cosAngle);
+    this.cosmicRushTangent = new THREE.Vector3(17 * cosAngle * rushAngleRate, 0, -20 * sinAngle * rushAngleRate);
   }
 
   /**
@@ -124,12 +124,13 @@ export class Director {
     else if (chapterId === 1) {
       const p = getChapterProgress(1, time);
       // 电影感等轴透视俯拍：左前向右后延伸观察地面波纹与探测屏粒子积累
-      const camX = -10.4 + p * 0.6;
-      const camY = 7.3 - p * 0.5;
-      const camZ = -6.4 + p * 0.6;
+      const push = smoothstep(0.10, 0.96, p);
+      const camX = -10.8 - push * 2.0;
+      const camY = 7.4 - push * 0.7;
+      const camZ = -6.6 + push * 4.6;
       camPos.set(camX, camY, camZ);
-      target.set(0, 0.35, 3);
-      fov = 44;
+      target.set(-0.6 + push * 0.5, 0.25, 2.4 + push * 1.6);
+      fov = 44 - push * 4;
     }
     // ==========================================
     // 02 混沌双摆
@@ -138,7 +139,7 @@ export class Director {
       const p = getChapterProgress(2, time);
       // 正面观察混沌轨迹，略微慢速呼吸微移
       const distance = 8.3 - p * 0.2;
-      const framingX = -1.9;
+      const framingX = -1.4;
       camPos.set(framingX + Math.sin(p * 0.8) * 0.14, 0.5, distance);
       target.set(framingX, 0.5, 0);
       fov = 46;
@@ -151,7 +152,7 @@ export class Director {
       // 电影感倾斜鸟瞰观察三维时空格点与双黑洞俯冲
       const angle = 0.35 + p * 0.45;
       const dist = 9.5 - p * 1.5;
-      camPos.set(Math.cos(angle) * dist, 4.5 - p * 0.8, Math.sin(angle) * dist);
+      camPos.set(Math.cos(angle) * dist, 5.5 - p * 0.6, Math.sin(angle) * dist);
       target.set(-0.5, -1.1, 0);
       fov = 50;
     }
@@ -161,8 +162,8 @@ export class Director {
     else if (chapterId === 4) {
       const p = getChapterProgress(4, time);
       // 正俯视角稍作三维倾角，俯瞰太阳系金星玫瑰花绽放
-      camPos.set(-2.4, 0, 9.2 - p * 0.2);
-      target.set(-2.4, 0, 0);
+      camPos.set(-1.55, 0, 7.25 + p * 2.35);
+      target.set(-1.55, 0, 0);
       fov = 52;
     }
     // ==========================================
@@ -170,15 +171,17 @@ export class Director {
     // ==========================================
     else if (chapterId === 5) {
       const p = getChapterProgress(5, time);
-      if (p < 0.7) {
+      if (p < 0.72) {
         // 大尺度纤维网漫游
-        const slowP = p / 0.7;
-        camPos.set(Math.sin(slowP * 0.5) * 12, 4.0, Math.cos(slowP * 0.5) * 14);
+        const slowP = p / 0.72;
+        const pullback = smoothstep(0.32, 0.66, p);
+        camPos.set(Math.sin(slowP * 0.5) * (12 + pullback * 5),
+          4 + pullback * 2, Math.cos(slowP * 0.5) * (14 + pullback * 6));
         target.set(0, 0, 0);
         fov = 55;
       } else {
         // 向纤维网上的一个真实星系粒子俯冲
-        const rushP = (p - 0.7) / 0.3;
+        const rushP = (p - 0.72) / 0.28;
         const r2 = rushP * rushP;
         const r3 = r2 * rushP;
         const h00 = 2 * r3 - 3 * r2 + 1;
@@ -197,6 +200,7 @@ export class Director {
         fov = 55 + h01 * 15;
       }
     }
+
     // ==========================================
     // 06 黑洞视界
     // ==========================================
@@ -214,6 +218,14 @@ export class Director {
       fov = 45;
     }
 
+    // Preserve the horizontal lens while projecting into the cinematic inner frame.
+    // The compositor maps the full offscreen texture into this shorter display area.
+    if (this.camera.aspect >= 1) {
+      const frameHeight = this.camera.userData.displayHeight ?? window.innerHeight;
+      fov = THREE.MathUtils.radToDeg(2 * Math.atan(
+        Math.tan(THREE.MathUtils.degToRad(fov * 0.5)) * frameHeight / window.innerHeight));
+    }
+
     // 竖屏把主体完整放在上半画幅，给下方字幕留下独立空间。
     if (this.camera.aspect < 1) {
       const aspect = Math.max(this.camera.aspect, 0.1);
@@ -226,7 +238,7 @@ export class Director {
         target.set(0, framingY, 0);
       } else if (chapterId === 1 || chapterId === 3 || chapterId === 5) {
         // 保留桌面观察角度，让装置和纤维网完整入镜。
-        const overview = chapterId === 5 ? 1 - smoothstep(0.7, 1, getChapterProgress(5, time)) : 1;
+        const overview = chapterId === 5 ? 1 - smoothstep(0.72, 1, getChapterProgress(5, time)) : 1;
         const framingAspect = chapterId === 1 ? 2.3 : 16 / 9;
         const fit = 1 + (framingAspect / aspect - 1) * overview;
         camPos.sub(target).multiplyScalar(fit).add(target);
@@ -245,9 +257,10 @@ export class Director {
     this.camera.lookAt(target);
   }
 
-  onResize(width, height) {
-    this.s0_planck.onResize(width, height);
-    this.s6_blackHole.onResize(width, height);
+  onResize(width, height, filmHeight = height) {
+    this.s0_planck.onResize(width, filmHeight);
+    this.s6_blackHole.onResize(width, filmHeight);
+    this.transition.material.uniforms.uFilmHeight.value = filmHeight / height;
     this.transition.drawTitle();
   }
 }

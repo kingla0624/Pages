@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CHAPTERS } from '../core/Timeline.js';
+import { CHAPTERS, getTransitionState } from '../core/Timeline.js';
 
 /**
  * Scene02_DoublePendulum.js - 混沌理论：双摆对初始条件的极端敏感性
@@ -18,7 +18,10 @@ export class Scene02_DoublePendulum {
 
     // 预计算轨迹数据，保证时间轴随意拖动 (Seek) 时完全确定一致
     this.simulationTimeScale = 2.5; // 将 25 秒物理演化压缩至 10 秒章节，保留可读的分叉过程
-    this.maxSimulationTime = 10.0 * this.simulationTimeScale;
+    // 退出画框内仍继续演化，直到共享转场结束；章节内的数值轨迹保持不变。
+    const chapter = CHAPTERS[2];
+    const visibleEnd = getTransitionState(chapter.end)?.end ?? chapter.end;
+    this.maxSimulationTime = (visibleEnd - chapter.start) * this.simulationTimeScale;
     this.dt = 0.002; // 历史采样间隔，保持 1200 点尾迹覆盖 2.4 秒
     this.integrationDt = 0.0005; // 更小的 RK4 内部步长，抑制混沌放大的积分误差
     this.history1 = [];
@@ -99,7 +102,7 @@ export class Scene02_DoublePendulum {
     const diffRad = (0.001 * Math.PI) / 180.0;
     let s2 = { theta1: Math.PI / 2 + diffRad, theta2: Math.PI / 2, omega1: 0, omega2: 0 };
 
-    const steps = Math.floor(this.maxSimulationTime / this.dt);
+    const steps = Math.ceil(this.maxSimulationTime / this.dt);
     const integrationSubsteps = Math.round(this.dt / this.integrationDt);
     for (let i = 0; i <= steps; i++) {
       const t = i * this.dt;
@@ -148,20 +151,14 @@ export class Scene02_DoublePendulum {
     bgPlane.position.set(0, 0.5, -2.0);
     this.group.add(bgPlane);
 
-    // 摆杆连线与关节
-    this.rodMat1 = new THREE.LineBasicMaterial({ color: 0xe8edf1, transparent: true });
-    this.rodPos1 = new Float32Array(3 * 3); // 3 个顶点 (pivot, joint, tip) * 3 分量
-    this.rodGeo1 = new THREE.BufferGeometry();
-    this.rodGeo1.setAttribute('position', new THREE.BufferAttribute(this.rodPos1, 3));
-    this.rod1 = new THREE.Line(this.rodGeo1, this.rodMat1);
-    this.group.add(this.rod1);
-
-    this.rodMat2 = new THREE.LineBasicMaterial({ color: 0xd95740, transparent: true });
+    // 用带解析柔边的屏幕空间 ribbon，避免 WebGL 原生线宽固定为一个设备像素。
+    this.rodPos1 = new Float32Array(3 * 3);
     this.rodPos2 = new Float32Array(3 * 3);
-    this.rodGeo2 = new THREE.BufferGeometry();
-    this.rodGeo2.setAttribute('position', new THREE.BufferAttribute(this.rodPos2, 3));
-    this.rod2 = new THREE.Line(this.rodGeo2, this.rodMat2);
-    this.group.add(this.rod2);
+    this.rod1 = this.createRibbon(3, 0xe8edf1, 2.6);
+    this.rod2 = this.createRibbon(3, 0xd95740, 2.6);
+    this.rodMat1 = this.rod1.material;
+    this.rodMat2 = this.rod2.material;
+    this.group.add(this.rod1, this.rod2);
 
     // 关节小球
     const jointGeo = new THREE.SphereGeometry(0.035, 16, 16);
@@ -178,25 +175,114 @@ export class Scene02_DoublePendulum {
     this.ball2_2 = new THREE.Mesh(jointGeo, new THREE.MeshBasicMaterial({ color: 0xd95740, transparent: true }));
     this.group.add(this.ball2_1, this.ball2_2);
 
-    // 尾迹轨迹线
+    // 尾迹仍使用完整 2.4 秒物理历史；仅改变栅格化和柔光，不平滑或改写轨迹。
     this.maxTrailPoints = 1200;
     this.trailPos1 = new Float32Array(this.maxTrailPoints * 3);
-    this.trailColors = new Float32Array(this.maxTrailPoints * 3);
-    this.trailColorAttribute = new THREE.BufferAttribute(this.trailColors, 3);
-    this.trailGeo1 = new THREE.BufferGeometry();
-    this.trailGeo1.setAttribute('position', new THREE.BufferAttribute(this.trailPos1, 3));
-    this.trailGeo1.setAttribute('color', this.trailColorAttribute);
-    this.trailMat1 = new THREE.LineBasicMaterial({ color: 0xdde4eb, vertexColors: true, transparent: true, opacity: 0.6, depthWrite: false });
-    this.trail1 = new THREE.Line(this.trailGeo1, this.trailMat1);
-    this.group.add(this.trail1);
-
     this.trailPos2 = new Float32Array(this.maxTrailPoints * 3);
-    this.trailGeo2 = new THREE.BufferGeometry();
-    this.trailGeo2.setAttribute('position', new THREE.BufferAttribute(this.trailPos2, 3));
-    this.trailGeo2.setAttribute('color', this.trailColorAttribute);
-    this.trailMat2 = new THREE.LineBasicMaterial({ color: 0xd95740, vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false });
-    this.trail2 = new THREE.Line(this.trailGeo2, this.trailMat2);
-    this.group.add(this.trail2);
+    this.trail1 = this.createRibbon(this.maxTrailPoints, 0xdde4eb, 3.0);
+    this.trail2 = this.createRibbon(this.maxTrailPoints, 0xd95740, 3.0);
+    this.trailGeo1 = this.trail1.geometry;
+    this.trailGeo2 = this.trail2.geometry;
+    this.trailMat1 = this.trail1.material;
+    this.trailMat2 = this.trail2.material;
+    this.group.add(this.trail1, this.trail2);
+  }
+
+  createRibbon(pointCount, color, halfWidth) {
+    const geometry = new THREE.BufferGeometry();
+    for (const name of ['position', 'previous', 'next']) {
+      geometry.setAttribute(name, new THREE.BufferAttribute(new Float32Array(pointCount * 6), 3).setUsage(THREE.DynamicDrawUsage));
+    }
+    geometry.setAttribute('brightness', new THREE.BufferAttribute(new Float32Array(pointCount * 2), 1).setUsage(THREE.DynamicDrawUsage));
+    const sides = new Float32Array(pointCount * 2);
+    const indices = [];
+    for (let i = 0; i < pointCount; i++) {
+      sides[i * 2] = -1; sides[i * 2 + 1] = 1;
+      if (i < pointCount - 1) indices.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 2, i * 2 + 1, i * 2 + 3);
+    }
+    geometry.setAttribute('side', new THREE.BufferAttribute(sides, 1));
+    geometry.setIndex(indices);
+    geometry.setDrawRange(0, 0);
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uResolution: { value: new THREE.Vector2(1, 1) },
+        uHalfWidth: { value: halfWidth },
+        uColor: { value: new THREE.Color(color) },
+        uOpacity: { value: 1 }
+      },
+      vertexShader: `
+        attribute vec3 previous;
+        attribute vec3 next;
+        attribute float side;
+        attribute float brightness;
+        uniform vec2 uResolution;
+        uniform float uHalfWidth;
+        varying float vSide;
+        varying float vBrightness;
+        void main() {
+          vec4 clip = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          vec4 prev = projectionMatrix * modelViewMatrix * vec4(previous, 1.0);
+          vec4 after = projectionMatrix * modelViewMatrix * vec4(next, 1.0);
+          vec2 incoming = (clip.xy / clip.w - prev.xy / prev.w) * uResolution;
+          vec2 outgoing = (after.xy / after.w - clip.xy / clip.w) * uResolution;
+          if (length(incoming) < 0.00001) incoming = outgoing;
+          if (length(outgoing) < 0.00001) outgoing = incoming;
+          vec2 beforeDir = incoming / max(length(incoming), 0.00001);
+          vec2 afterDir = outgoing / max(length(outgoing), 0.00001);
+          vec2 tangent = beforeDir + afterDir;
+          if (length(tangent) < 0.00001) tangent = beforeDir;
+          tangent /= max(length(tangent), 0.00001);
+          vec2 normal = vec2(-tangent.y, tangent.x);
+          // 有限 miter 保持转角处杆宽，防止平均切线使折返摆杆逐渐收成点。
+          float miter = max(abs(dot(normal, vec2(-beforeDir.y, beforeDir.x))), 0.25);
+          clip.xy += normal * side * uHalfWidth * 2.0 / (uResolution * miter) * clip.w;
+          gl_Position = clip;
+          vSide = side;
+          vBrightness = brightness;
+        }`,
+      fragmentShader: `
+        uniform vec3 uColor;
+        uniform float uOpacity;
+        varying float vSide;
+        varying float vBrightness;
+        void main() {
+          float d = abs(vSide);
+          float profile = (0.90 * exp(-14.0 * d * d) + 0.065 * exp(-3.0 * d * d)) * (1.0 - smoothstep(0.82, 1.0, d));
+          gl_FragColor = vec4(uColor, profile * vBrightness * uOpacity);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.frustumCulled = false;
+    mesh.onBeforeRender = (renderer, scene, camera) => {
+      const resolution = material.uniforms.uResolution.value;
+      renderer.getSize(resolution);
+      resolution.set(camera.userData.displayWidth ?? resolution.x, camera.userData.displayHeight ?? resolution.y);
+    };
+    return mesh;
+  }
+
+  updateRibbon(mesh, points, count, fade = false) {
+    const attributes = mesh.geometry.attributes;
+    for (let i = 0; i < count; i++) {
+      const previous = Math.max(0, i - 1) * 3;
+      const next = Math.min(count - 1, i + 1) * 3;
+      const age = i / Math.max(count - 1, 1);
+      const brightness = fade ? 0.10 + 0.90 * age * age : 1;
+      for (let side = 0; side < 2; side++) {
+        const offset = (i * 2 + side) * 3;
+        for (let axis = 0; axis < 3; axis++) {
+          attributes.position.array[offset + axis] = points[i * 3 + axis];
+          attributes.previous.array[offset + axis] = points[previous + axis];
+          attributes.next.array[offset + axis] = points[next + axis];
+        }
+        attributes.brightness.array[i * 2 + side] = brightness;
+      }
+    }
+    for (const name of ['position', 'previous', 'next', 'brightness']) attributes[name].needsUpdate = true;
+    mesh.geometry.setDrawRange(0, Math.max(0, count - 1) * 6);
   }
 
   update(time, opacity) {
@@ -221,13 +307,13 @@ export class Scene02_DoublePendulum {
     this.rodPos1[0] = this.pivot.x; this.rodPos1[1] = this.pivot.y; this.rodPos1[2] = this.pivot.z;
     this.rodPos1[3] = p1_jX;        this.rodPos1[4] = p1_jY;        this.rodPos1[5] = 0;
     this.rodPos1[6] = p1_tX;        this.rodPos1[7] = p1_tY;        this.rodPos1[8] = 0;
-    this.rodGeo1.attributes.position.needsUpdate = true;
+    this.updateRibbon(this.rod1, this.rodPos1, 3);
 
     // 更新连杆 2 顶点缓冲 (零内存分配)
     this.rodPos2[0] = this.pivot.x; this.rodPos2[1] = this.pivot.y; this.rodPos2[2] = this.pivot.z;
     this.rodPos2[3] = p2_jX;        this.rodPos2[4] = p2_jY;        this.rodPos2[5] = -0.01;
     this.rodPos2[6] = p2_tX;        this.rodPos2[7] = p2_tY;        this.rodPos2[8] = -0.01;
-    this.rodGeo2.attributes.position.needsUpdate = true;
+    this.updateRibbon(this.rod2, this.rodPos2, 3);
 
     // 更新小球
     this.ball1_1.position.set(p1_jX, p1_jY, 0);
@@ -251,27 +337,16 @@ export class Scene02_DoublePendulum {
       this.trailPos2[i * 3 + 0] = this.pivot.x + pt2[0];
       this.trailPos2[i * 3 + 1] = this.pivot.y + pt2[1];
       this.trailPos2[i * 3 + 2] = -0.005;
-
-      // 旧轨迹柔和退入背景，让刚刚分叉的末端保持清晰。
-      const age = i / Math.max(trailSpan - 1, 1);
-      const brightness = 0.12 + 0.88 * age * age;
-      this.trailColors[i * 3 + 0] = brightness;
-      this.trailColors[i * 3 + 1] = brightness;
-      this.trailColors[i * 3 + 2] = brightness;
     }
 
-    this.trailGeo1.attributes.position.needsUpdate = true;
-    this.trailGeo1.setDrawRange(0, trailSpan);
-
-    this.trailGeo2.attributes.position.needsUpdate = true;
-    this.trailGeo2.setDrawRange(0, trailSpan);
-    this.trailColorAttribute.needsUpdate = true;
+    this.updateRibbon(this.trail1, this.trailPos1, trailSpan, true);
+    this.updateRibbon(this.trail2, this.trailPos2, trailSpan, true);
 
     // 设置整体透明度
-    this.rodMat1.opacity = opacity * 0.9;
-    this.rodMat2.opacity = opacity * 0.78;
-    this.trailMat1.opacity = opacity * 0.6;
-    this.trailMat2.opacity = opacity * 0.55;
+    this.rodMat1.uniforms.uOpacity.value = opacity * 0.95;
+    this.rodMat2.uniforms.uOpacity.value = opacity * 0.88;
+    this.trailMat1.uniforms.uOpacity.value = opacity * 0.72;
+    this.trailMat2.uniforms.uOpacity.value = opacity * 0.65;
     this.bgMat.opacity = opacity * 0.8;
     this.ballPivot.material.opacity = opacity;
     this.ball1_1.material.opacity = opacity;

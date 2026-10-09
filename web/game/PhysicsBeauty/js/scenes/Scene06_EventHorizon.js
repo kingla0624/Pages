@@ -10,6 +10,7 @@ export class Scene06_EventHorizon {
   constructor() {
     this.group = new THREE.Group();
     this.group.name = 'Scene06_EventHorizon';
+    this.frameScale = 1;
 
     const quadGeo = new THREE.PlaneGeometry(2, 2);
     this.material = new THREE.ShaderMaterial({
@@ -104,10 +105,13 @@ export class Scene06_EventHorizon {
           float time = max(uTime - 56.0, 0.0);
           vec2 flow = rotate(time * orbitalRate(radius)
             + 0.55 / max(radius, 0.28)) * p;
-          float filaments = 0.5 + 0.5 * sin(radius * 175.0
-            + noise(flow * 17.0) * 3.5 - time * 0.35);
-          return 0.58 + 0.23 * noise(flow * 63.0) + 0.15 * filaments
-            + 0.14 * transientKnots(p, radius, time);
+          float eddies = fbm(flow * 9.0);
+          // Broad, locally distorted strands avoid equally spaced radial rings.
+          float filaments = pow(0.5 + 0.5 * sin(radius * 86.0
+            + (eddies - 0.5) * 11.0 + noise(flow * 24.0) * 3.5), 1.7);
+          return 0.30 + 0.35 * smoothstep(0.15, 0.72, eddies)
+            + 0.17 * noise(flow * 45.0) + 0.20 * filaments
+            + 0.90 * transientKnots(p, radius, time);
         }
 
         float orbitalBeaming(vec2 p, float radius) {
@@ -126,7 +130,7 @@ export class Scene06_EventHorizon {
           // Linear HDR color: narrow hot strands become white after ACES,
           // while their weaker surroundings retain an amber tint.
           vec3 amber = vec3(1.0, 0.23, 0.045) * intensity * 0.42;
-          vec3 hot = vec3(1.0, 0.73, 0.40) * intensity * intensity * 0.40;
+          vec3 hot = vec3(1.0, 0.62, 0.29) * intensity * intensity * 0.40;
           // The hot contribution grows gently so broad disk regions stay warm.
           vec3 white = vec3(1.0, 0.95, 0.84)
             * pow(max(intensity - 0.65, 0.0), 2.0) * 0.10;
@@ -189,6 +193,18 @@ export class Scene06_EventHorizon {
           color += thermalLight(diskLight * 1.55)
             * mix(outsideShadow, 1.0, front);
 
+          // Light scattered around the approaching limb broadens its flare.
+          // Keep it outside the shadow so the black silhouette remains clear.
+          float leftFlare = gaussian(p.x + 0.46, 0.30)
+            * gaussian(p.y - planeCurve, 0.12);
+          float flareVariation = 0.70 + 0.30
+            * fbm(vec2(p.x * 10.0, p.y * 19.0) + vec2(uTime * 0.07, 3.8));
+          float diskVeil = gaussian(p.y - planeCurve, 0.11)
+            * (1.0 - smoothstep(0.80, 1.45, abs(p.x)))
+            * smoothstep(0.25, 0.38, abs(p.x));
+          color += (thermalLight(leftFlare * flareVariation * 1.25) * 0.62
+            + vec3(1.0, 0.23, 0.055) * diskVeil * 0.15) * outsideShadow;
+
           // Rear-disk images: a broad upper arch and a thinner lower image.
           // Both rear images sample the same rear-disk flow. The source radius
           // is an analytic lens mapping, not a relativistic geodesic solution.
@@ -206,11 +222,13 @@ export class Scene06_EventHorizon {
             + archCore * 0.32) * archTexture * archBeaming;
           color += thermalLight(lensLight * 1.5) * outsideShadow;
           color += vec3(0.50, 0.16, 0.055)
-            * gaussian(lensRadius - 0.35, 0.078) * archBeaming * 0.12;
+            * gaussian(lensRadius - 0.35, 0.078) * archBeaming * 0.18 * outsideShadow;
 
           // A delicate photon-ring cue remains distinct from the disk.
-          float photonRing = gaussian(radius - 0.257, 0.0017);
-          color += vec3(0.8, 0.63, 0.44) * photonRing * 0.34;
+          float ringTexture = 0.55 + 0.45 * noise(direction * 22.0);
+          float photonRing = gaussian(radius - 0.257, 0.0012 + ringTexture * 0.0004);
+          float ringLight = (0.065 + 0.115 * orbitalBeaming(p, radius)) * ringTexture;
+          color += vec3(0.8, 0.63, 0.44) * photonRing * ringLight;
           color *= uEndFade;
 
           gl_FragColor = vec4(color, uOpacity);
@@ -235,7 +253,7 @@ export class Scene06_EventHorizon {
 
     this.material.uniforms.uTime.value = time;
     this.material.uniforms.uOpacity.value = opacity;
-    this.material.uniforms.uZoom.value = zoom;
+    this.material.uniforms.uZoom.value = zoom * this.frameScale;
     this.material.uniforms.uEndFade.value = 1 - smoothstep(0.96, 1, progress);
 
     this.group.visible = opacity > 0.001;
@@ -243,5 +261,7 @@ export class Scene06_EventHorizon {
 
   onResize(width, height) {
     this.material.uniforms.uResolution.value.set(width, height);
+    // Keep the subject's viewport scale when the compositor adds letterboxing.
+    this.frameScale = window.innerHeight / height;
   }
 }

@@ -14,12 +14,17 @@ class App {
     this.container = document.getElementById('canvas-container');
     this.width = window.innerWidth;
     this.height = window.innerHeight;
+    this.filmHeight = this.width >= this.height ? Math.min(this.height, this.width / 2.39) : this.height;
+    document.documentElement.style.setProperty('--film-top', `${(this.height - this.filmHeight) / 2}px`);
+    document.documentElement.style.setProperty('--film-height', `${this.filmHeight}px`);
 
     // 1. 初始化 Three.js 核心三要素
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000000);
 
-    this.camera = new THREE.PerspectiveCamera(45, this.width / this.height, 0.1, 1000);
+    this.camera = new THREE.PerspectiveCamera(45, this.width / this.filmHeight, 0.1, 1000);
+    this.camera.userData.displayWidth = this.width;
+    this.camera.userData.displayHeight = this.filmHeight;
     this.camera.position.set(0, 0, 5);
 
     this.renderer = new THREE.WebGLRenderer({
@@ -37,6 +42,9 @@ class App {
     this.hud = new HUDController(this.clock);
     this.audio = new AudioEngine();
     this.director = new Director(this.scene, this.camera);
+    this.director.onResize(this.width, this.height, this.filmHeight);
+    this.director.transition.drawOrbitCounter = (ctx, time, width, height) =>
+      this.hud.drawOrbitCounter(ctx, time, width, height);
     this.clock.onSeek = () => this.audio.resetTransport();
 
     // 3. 绑定 UI 交互事件
@@ -50,15 +58,7 @@ class App {
 
   bindEvents() {
     // 窗口尺寸自适应
-    window.addEventListener('resize', () => {
-      this.width = window.innerWidth;
-      this.height = window.innerHeight;
-      this.camera.aspect = this.width / this.height;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize(this.width, this.height);
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      this.director.onResize(this.width, this.height);
-    });
+    window.addEventListener('resize', () => this.resize());
 
     // 首次交互解锁 Web Audio 上下文
     const unlockAudio = () => {
@@ -116,15 +116,7 @@ class App {
       btnIntroFs.addEventListener('click', toggleFullscreen);
     }
 
-    document.addEventListener('fullscreenchange', () => {
-      this.width = window.innerWidth;
-      this.height = window.innerHeight;
-      this.camera.aspect = this.width / this.height;
-      this.camera.updateProjectionMatrix();
-      this.renderer.setSize(this.width, this.height);
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      this.director.onResize(this.width, this.height);
-    });
+    document.addEventListener('fullscreenchange', () => this.resize());
 
     // 章节快速跳转按钮
     const pills = document.querySelectorAll('.pill-btn');
@@ -167,6 +159,21 @@ class App {
   syncPlayStateUI() {
     const btnPlayPause = document.getElementById('btn-play-pause');
     btnPlayPause.classList.toggle('playing', this.clock.isPlaying);
+  }
+
+  resize() {
+    this.width = window.innerWidth;
+    this.height = window.innerHeight;
+    this.filmHeight = this.width >= this.height ? Math.min(this.height, this.width / 2.39) : this.height;
+    document.documentElement.style.setProperty('--film-top', `${(this.height - this.filmHeight) / 2}px`);
+    document.documentElement.style.setProperty('--film-height', `${this.filmHeight}px`);
+    this.camera.aspect = this.width / this.filmHeight;
+    this.camera.userData.displayWidth = this.width;
+    this.camera.userData.displayHeight = this.filmHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(this.width, this.height);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.director.onResize(this.width, this.height, this.filmHeight);
   }
 
   animate() {

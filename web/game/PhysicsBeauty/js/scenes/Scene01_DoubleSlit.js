@@ -62,7 +62,7 @@ export class Scene01_DoubleSlit {
           vec3 col = vec3(0.007, 0.008, 0.010);
           if (z < 0.0) {
             // 法线朝上的入射区：相位沿 +z 传播，清楚展示平行波前。
-            float crest = pow(0.5 + 0.5 * cos(k * z - uTime * 5.2), 12.0);
+            float crest = pow(0.5 + 0.5 * cos(k * z - uTime * 5.2), 6.0);
             float edge = smoothstep(-6.5, -5.4, z) * (1.0 - smoothstep(6.0, 8.0, abs(x)));
             col += vec3(0.52, 0.53, 0.56) * crest * edge;
           } else {
@@ -71,18 +71,26 @@ export class Scene01_DoubleSlit {
             float r2 = length(p - vec2(uSlitDist * 0.5, 0.0));
             float phase1 = k * r1 - uTime * 5.2;
             float phase2 = k * r2 - uTime * 5.2;
-            float wave = 0.5 * (cos(phase1) + cos(phase2));
-            float intensity = wave * wave;
+            // Separate the shared interference envelope from the moving carrier.
+            // This is the time-averaged intensity of the same two coherent sources.
+            float intensity = 0.5 + 0.5 * cos(phase1 - phase2);
             float sinTheta = x / max(length(p), 0.00001);
             float beta = 3.14159265 * uSlitWidth * sinTheta / uWavelength;
             float diffraction = abs(beta) < 0.00001 ? 1.0 : sin(beta) / beta;
-            float crests = 0.5 * (pow(0.5 + 0.5 * cos(phase1), 14.0) + pow(0.5 + 0.5 * cos(phase2), 14.0));
+            float carrier = 0.5 + 0.5 * cos(0.5 * (phase1 + phase2));
+            float crests = pow(carrier, 5.0);
+            float crestHalo = pow(carrier, 1.5);
             float radius = min(r1, r2);
             float reveal = 1.0 - smoothstep(uRevealRadius - 0.55, uRevealRadius, radius);
             float edge = (1.0 - smoothstep(7.5, 9.5, z)) * (1.0 - smoothstep(6.3, 8.0, abs(x)));
             float attenuation = 1.0 / (1.0 + radius * 0.10);
-            // 中性圆弧保留两源波前；暖色的时间平均正比于探测概率。
-            col += (vec3(0.32, 0.33, 0.35) * crests + vec3(0.60, 0.27, 0.13) * intensity * diffraction * diffraction) * reveal * edge * attenuation;
+            // Wide white wavefronts sit over warm interference fans, rather than
+            // drawing two hard crossing contour sets at every phase maximum.
+            vec3 wavefront = vec3(0.36, 0.37, 0.39) * crests
+              * (0.26 + 0.74 * sqrt(intensity)) + vec3(0.07) * crestHalo;
+            vec3 warmFan = vec3(0.82, 0.23, 0.075) * intensity
+              * diffraction * diffraction * (0.42 + 0.58 * crests);
+            col += (wavefront + warmFan) * reveal * edge * attenuation;
           }
           gl_FragColor = vec4(col, uOpacity);
           #include <tonemapping_fragment>
@@ -173,7 +181,7 @@ export class Scene01_DoubleSlit {
     this.currentParticleCount = 0;
     const dotGeo = new THREE.CircleGeometry(0.016, 6);
     this.dotMat = new THREE.MeshBasicMaterial({
-      color: 0xffebdc,
+      color: 0xffffff,
       side: THREE.DoubleSide,
       transparent: true,
       opacity: 0.85,
@@ -203,12 +211,20 @@ export class Scene01_DoubleSlit {
       }
       const y = 0.18 + random() * 2.62;
       const z = this.screenDistance - 0.01;
+      // Appearance uses an independent index hash so it cannot perturb sampling.
+      const appearance = (Math.imul(i + 1, 1597334677) >>> 0) / 4294967296;
+      const warmth = (Math.imul(i + 1, 3812015801) >>> 0) / 4294967296;
+      const color = new THREE.Color(0xfffcf4).lerp(new THREE.Color(0xff7c3d), warmth ** 3);
+      color.multiplyScalar(0.38 + appearance * 1.1);
 
       dummy.position.set(x, y, z);
+      dummy.scale.setScalar(0.7 + appearance * 0.9);
       dummy.updateMatrix();
       this.instancedDots.setMatrixAt(i, dummy.matrix);
+      this.instancedDots.setColorAt(i, color);
     }
     this.instancedDots.instanceMatrix.needsUpdate = true;
+    this.instancedDots.instanceColor.needsUpdate = true;
   }
 
   /**
@@ -232,6 +248,50 @@ export class Scene01_DoubleSlit {
     });
     this.curveLine = new THREE.Line(curveGeo, this.curveMat);
     this.group.add(this.curveLine);
+
+    // A world-space ribbon supplies the soft halo; WebGL ignores Line linewidth.
+    const positions = [];
+    const offsets = [];
+    const indices = [];
+    for (let i = 0; i < points.length; i++) {
+      const point = points[i];
+      positions.push(point.x, point.y - 0.055, point.z, point.x, point.y + 0.055, point.z);
+      offsets.push(-1, 1);
+      if (i > 0) {
+        const base = i * 2;
+        indices.push(base - 2, base - 1, base, base - 1, base + 1, base);
+      }
+    }
+    const glowGeo = new THREE.BufferGeometry();
+    glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    glowGeo.setAttribute('aOffset', new THREE.Float32BufferAttribute(offsets, 1));
+    glowGeo.setIndex(indices);
+    this.curveGlowMat = new THREE.ShaderMaterial({
+      uniforms: { uOpacity: { value: 0 } },
+      vertexShader: `
+        attribute float aOffset;
+        varying float vOffset;
+        void main() {
+          vOffset = aOffset;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uOpacity;
+        varying float vOffset;
+        void main() {
+          float glow = exp(-vOffset * vOffset * 6.0);
+          gl_FragColor = vec4(vec3(0.80, 0.15, 0.055), glow * uOpacity);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }
+      `,
+      side: THREE.DoubleSide,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    this.group.add(new THREE.Mesh(glowGeo, this.curveGlowMat));
   }
 
   getDetectorProbability(x) {
@@ -250,7 +310,7 @@ export class Scene01_DoubleSlit {
     const progress = getChapterProgress(1, time);
     this.floorMat.uniforms.uTime.value = time;
     this.floorMat.uniforms.uOpacity.value = opacity;
-    this.floorMat.uniforms.uRevealRadius.value = smoothstep(0.02, 0.58, progress) * 14;
+    this.floorMat.uniforms.uRevealRadius.value = smoothstep(0.08, 0.90, progress) * 14;
     this.barrierMat.opacity = opacity;
     this.slitMat.opacity = opacity;
     this.edgeMat.opacity = opacity * 0.9;
@@ -258,6 +318,7 @@ export class Scene01_DoubleSlit {
     this.screenEdgeMat.opacity = opacity * 0.7;
     this.beamMat.opacity = opacity * 0.14;
     this.curveMat.opacity = opacity * 0.75 * smoothstep(0.64, 0.91, progress);
+    this.curveGlowMat.uniforms.uOpacity.value = opacity * 0.48 * smoothstep(0.64, 0.91, progress);
     this.dotMat.opacity = opacity * 0.9;
 
     // 前半幕逐粒子落下，后半幕才显出统计条纹；不依赖前一次更新时间。

@@ -31,7 +31,8 @@ export class Scene03_GravitationalWaves {
         uBh2Pos: { value: new THREE.Vector2(1.5, 0.0) },
         uMergerFactor: { value: 0.0 },
         uTime: { value: GW_MODEL.startTime },
-        uFlash: { value: 0 }
+        uFlash: { value: 0 },
+        uPixelScale: { value: new THREE.Vector2(1, 1) }
       },
       vertexShader: `
         uniform vec2 uBh1Pos;
@@ -43,6 +44,7 @@ export class Scene03_GravitationalWaves {
         varying float vWave;
         varying float vWell;
         varying vec2 vUv;
+        varying vec3 vViewPosition;
 
         ${GRAVITATIONAL_WAVE_GLSL}
 
@@ -73,36 +75,49 @@ export class Scene03_GravitationalWaves {
           vWave = wave;
           vWorldPos = pos;
 
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          vec4 viewPosition = modelViewMatrix * vec4(pos, 1.0);
+          vViewPosition = -viewPosition.xyz;
+          gl_Position = projectionMatrix * viewPosition;
         }
       `,
       fragmentShader: `
         uniform float uOpacity;
         uniform float uFlash;
+        uniform vec2 uPixelScale;
         varying vec3 vWorldPos;
         varying float vWave;
         varying float vWell;
         varying vec2 vUv;
+        varying vec3 vViewPosition;
 
         void main() {
           // 网格线渲染 (Wireframe Grid Lines via derivatives)
           vec2 cell = vUv * 58.0;
-          vec2 grid = abs(fract(cell - 0.5) - 0.5) / max(fwidth(cell), vec2(0.0001));
-          float line = 1.0 - min(min(grid.x, grid.y), 1.0);
+          vec2 dx = dFdx(cell) * uPixelScale.x;
+          vec2 dy = dFdy(cell) * uPixelScale.y;
+          vec2 footprint = max(sqrt(dx * dx + dy * dy), vec2(0.0001));
+          vec2 grid = abs(fract(cell - 0.5) - 0.5) / footprint;
+          float line = 1.0 - smoothstep(0.18, 0.82, min(grid.x, grid.y));
 
-          vec3 wireColor = vec3(0.55, 0.58, 0.62);
-          float accent = smoothstep(0.12, 0.62, abs(vWave)) * 0.38
-                       + smoothstep(1.6, 2.8, -vWell) * 0.15;
-          wireColor = mix(wireColor, vec3(0.85, 0.22, 0.10), accent);
+          vec3 wireColor = vec3(0.58, 0.61, 0.65);
+          // 红色波谷与白色波峰分区，仅改变呈现，不改共享源模型。
+          float accent = smoothstep(0.025, 0.18, -vWave) * 0.86
+                       + smoothstep(1.3, 2.7, -vWell) * 0.12;
+          wireColor = mix(wireColor, vec3(0.95, 0.13, 0.045), accent);
           // 波峰单独用波幅判定，避免总深度为负时亮白永不出现。
           wireColor += vec3(0.30, 0.27, 0.23) * smoothstep(0.18, 0.62, vWave);
 
           // 边缘平滑衰减
           float dist = length(vWorldPos.xz);
           float falloff = 1.0 - smoothstep(8.5, 13.0, dist);
+          vec3 normal = cross(dFdx(vViewPosition), dFdy(vViewPosition));
+          float facing = abs(dot(normal, normalize(vViewPosition))) / max(length(normal), 0.00000001);
+          // 掠射处与远面淡出，保留波峰折线而避免细胞网在远景结成亮白带。
+          float grazing = mix(0.30, 1.0, smoothstep(0.04, 0.35, facing));
+          float perspective = mix(1.0, 0.32, smoothstep(8.0, 25.0, length(vViewPosition)));
           wireColor += vec3(0.70, 0.50, 0.32) * uFlash * exp(-dist * 0.25);
 
-          gl_FragColor = vec4(wireColor, uOpacity * line * falloff * (0.68 + 0.20 * uFlash));
+          gl_FragColor = vec4(wireColor, uOpacity * line * falloff * grazing * perspective * (0.72 + 0.16 * uFlash));
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }
@@ -110,12 +125,35 @@ export class Scene03_GravitationalWaves {
       transparent: true,
       wireframe: false,
       depthWrite: false,
-      side: THREE.DoubleSide
+      side: THREE.DoubleSide,
+      forceSinglePass: true
     });
 
+    // 只预写同一形变曲面的最近深度，避免透过波峰看到远背面的重复线条。
+    // 不填充颜色；后绘的黑洞标记和并合光晕继续独立可见。
+    this.gridDepthMat = new THREE.ShaderMaterial({
+      uniforms: this.gridMat.uniforms,
+      vertexShader: this.gridMat.vertexShader,
+      fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
+      colorWrite: false,
+      depthWrite: true,
+      side: THREE.DoubleSide
+    });
+    this.gridDepthMesh = new THREE.Mesh(gridGeo, this.gridDepthMat);
+    this.gridDepthMesh.position.set(0, 0.2, 0);
     this.gridMesh = new THREE.Mesh(gridGeo, this.gridMat);
     this.gridMesh.position.set(0, 0.2, 0);
-    this.group.add(this.gridMesh);
+    this.gridMesh.onBeforeRender = (renderer, _scene, camera) => {
+      // 距离以最终内画幅的 CSS 像素计量，分别补偿 RT 到画幅的横纵缩放。
+      const target = renderer.getRenderTarget();
+      const width = camera.userData.displayWidth ?? renderer.domElement.clientWidth;
+      const height = camera.userData.displayHeight ?? renderer.domElement.clientHeight;
+      this.gridMat.uniforms.uPixelScale.value.set(
+        target ? target.width / Math.max(1, width) : renderer.getPixelRatio(),
+        target ? target.height / Math.max(1, height) : renderer.getPixelRatio()
+      );
+    };
+    this.group.add(this.gridDepthMesh, this.gridMesh);
   }
 
   /**
