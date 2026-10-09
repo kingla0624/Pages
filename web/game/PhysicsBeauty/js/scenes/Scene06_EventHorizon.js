@@ -1,9 +1,10 @@
 import * as THREE from 'three';
+import { getChapterProgress, smoothstep } from '../core/Timeline.js';
 
 /**
- * Scene06_EventHorizon.js - 广义相对论黑洞与事件视界
- * 采用全屏光线步进 (Raymarching) 着色器实现史瓦西引力透镜弯曲、吸积盘背向折射、
- * 相对论多普勒集束效应 (Doppler Beaming) 与冲入视界穿透转场
+ * An analytic screen-space illustration of a lensed accretion disk.
+ * Separate rear, shadow and foreground layers preserve the characteristic
+ * silhouette. This is an artistic projection, not a relativistic ray tracer.
  */
 export class Scene06_EventHorizon {
   constructor() {
@@ -15,7 +16,8 @@ export class Scene06_EventHorizon {
       uniforms: {
         uTime: { value: 0 },
         uOpacity: { value: 1.0 },
-        uZoom: { value: 1.0 }, // 随着时间推进冲入黑洞 (1.0 -> 8.0)
+        uZoom: { value: 1.0 },
+        uEndFade: { value: 1.0 },
         uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
       },
       vertexShader: `
@@ -29,113 +31,191 @@ export class Scene06_EventHorizon {
         uniform float uTime;
         uniform float uOpacity;
         uniform float uZoom;
+        uniform float uEndFade;
         uniform vec2 uResolution;
         varying vec2 vUv;
 
-        // 简易哈希与旋转
-        mat2 rot(float a) {
-          float s = sin(a), c = cos(a);
+        mat2 rotate(float angle) {
+          float s = sin(angle), c = cos(angle);
           return mat2(c, -s, s, c);
         }
 
-        // 简易伪随机噪声
         float hash(vec2 p) {
-          return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
         }
 
         float noise(vec2 p) {
-          vec2 i = floor(p);
+          vec2 cell = floor(p);
           vec2 f = fract(p);
           f = f * f * (3.0 - 2.0 * f);
-          return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-                     mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+          return mix(mix(hash(cell), hash(cell + vec2(1.0, 0.0)), f.x),
+                     mix(hash(cell + vec2(0.0, 1.0)), hash(cell + vec2(1.0)), f.x), f.y);
+        }
+
+        float fbm(vec2 p) {
+          float result = 0.0;
+          float weight = 0.5;
+          for (int i = 0; i < 3; i++) {
+            result += weight * noise(p);
+            p = rotate(0.53) * p * 2.03 + vec2(3.7, 8.2);
+            weight *= 0.5;
+          }
+          return result;
+        }
+
+        float gaussian(float distance, float width) {
+          float d = distance / width;
+          return exp(-d * d);
+        }
+
+        float orbitalRate(float radius) {
+          // Illustrative Kepler flow, bounded outside the visible annulus.
+          return clamp(0.26 * pow(0.37 / max(radius, 0.28), 1.5), 0.045, 0.41);
+        }
+
+        float transientKnots(vec2 p, float radius, float time) {
+          float knots = 0.0;
+          for (int i = 0; i < 3; i++) {
+            float slot = float(i);
+            float cycle = (time + slot * 1.47) / 4.8;
+            float generation = floor(cycle);
+            float age = fract(cycle);
+            float envelope = smoothstep(0.0, 0.18, age)
+              * (1.0 - smoothstep(0.62, 1.0, age));
+            float knotRadius = 0.36 + 0.40 * hash(vec2(slot + 2.1, generation));
+            float phase = 6.2831853 * hash(vec2(slot + 8.7, generation + 3.4));
+            vec2 radial = vec2(cos(phase), sin(phase));
+            vec2 tangent = vec2(-radial.y, radial.x);
+            // Each radial sample advects at its own rate after the knot's
+            // birth, stretching a compact source into a short trailing arc.
+            vec2 source = rotate(orbitalRate(radius) * age * 4.8) * p;
+            vec2 delta = source - radial * knotRadius;
+            vec2 local = vec2(dot(delta, radial) / 0.024,
+                              dot(delta, tangent) / 0.070);
+            knots += envelope * exp(-dot(local, local));
+          }
+          return knots;
+        }
+
+        // Inverse advection uses continuous Cartesian samples throughout
+        // the disk, including lensed images. No atan/noise branch seam.
+        float flowingTexture(vec2 p, float radius) {
+          // Chapter-relative phase keeps accumulated shear moderate on entry.
+          float time = max(uTime - 56.0, 0.0);
+          vec2 flow = rotate(time * orbitalRate(radius)
+            + 0.55 / max(radius, 0.28)) * p;
+          float filaments = 0.5 + 0.5 * sin(radius * 175.0
+            + noise(flow * 17.0) * 3.5 - time * 0.35);
+          return 0.58 + 0.23 * noise(flow * 63.0) + 0.15 * filaments
+            + 0.14 * transientKnots(p, radius, time);
+        }
+
+        float orbitalBeaming(vec2 p, float radius) {
+          vec2 radial = p / max(radius, 0.001);
+          vec3 velocityDirection = vec3(-radial.y, radial.x, 0.0);
+          // Front of this inclined disk has negative disk-y. Its local
+          // tangent approaches the viewer on the left and recedes on the right.
+          vec3 toViewer = normalize(vec3(0.0, -0.993, 0.12));
+          float approach = dot(velocityDirection, toViewer);
+          float beta = clamp(0.31 * sqrt(0.34 / max(radius, 0.28)), 0.13, 0.36);
+          float doppler = sqrt(1.0 - beta * beta) / (1.0 - beta * approach);
+          return doppler * doppler * doppler;
+        }
+
+        vec3 thermalLight(float intensity) {
+          // Linear HDR color: narrow hot strands become white after ACES,
+          // while their weaker surroundings retain an amber tint.
+          vec3 amber = vec3(1.0, 0.23, 0.045) * intensity * 0.42;
+          vec3 hot = vec3(1.0, 0.73, 0.40) * intensity * intensity * 0.40;
+          // The hot contribution grows gently so broad disk regions stay warm.
+          vec3 white = vec3(1.0, 0.95, 0.84)
+            * pow(max(intensity - 0.65, 0.0), 2.0) * 0.10;
+          return amber + hot + white;
+        }
+
+        float stars(vec2 p, float radius) {
+          // A sparse static field is stretched tangentially near the lens.
+          vec2 ray = p * (1.0 + 0.025 / (dot(p, p) + 0.08));
+          vec2 cell = floor(ray * 22.0);
+          vec2 offset = vec2(hash(cell + 8.3), hash(cell + 19.7));
+          vec2 d = fract(ray * 22.0) - (0.15 + offset * 0.7);
+          vec2 direction = normalize(p + vec2(0.0001));
+          vec2 tangent = vec2(-direction.y, direction.x);
+          float stretch = mix(1.0, 4.0, 1.0 - smoothstep(0.35, 1.2, radius));
+          vec2 spot = vec2(dot(d, tangent) / stretch, dot(d, direction));
+          float visible = step(0.986, hash(cell + 31.4));
+          return visible * exp(-dot(spot, spot) * 2600.0)
+            * (0.16 + 0.11 * hash(cell + 41.0));
         }
 
         void main() {
-          vec2 uv = (vUv - 0.5) * 2.0;
-          uv.x *= uResolution.x / uResolution.y;
+          vec2 screen = (vUv - 0.5) * 2.0;
+          screen.x *= uResolution.x / uResolution.y;
+          vec2 p = screen / uZoom;
+          float radius = length(p);
+          vec2 direction = p / max(radius, 0.001);
 
-          // 应用相机向前冲刺放大倍率
-          uv /= uZoom;
+          // Gray-blue clouds and sparse warped stars add depth without
+          // competing with the silhouette or chapter caption.
+          vec2 bentSky = p + direction * 0.035 / (radius + 0.12);
+          float cloud = fbm(bentSky * 1.8 + vec2(7.1, 3.8));
+          float wisps = fbm(rotate(0.6) * bentSky * 3.6 + vec2(12.0, 4.0));
+          float haze = pow(max(cloud * 1.4 + wisps * 0.5 - 0.50, 0.0), 2.0);
+          float cloudRing = gaussian(radius - 0.68, 0.40);
+          vec3 color = vec3(0.085, 0.095, 0.112) * haze
+            * (0.35 + cloudRing * 1.4);
+          color += vec3(stars(p, radius));
+          color *= 1.0 - smoothstep(1.2, 2.2, length(screen));
 
-          float r = length(uv);
-          float phi = atan(uv.y, uv.x);
+          // The central shadow occludes sky and the rear half of the disk.
+          const float shadowRadius = 0.25;
+          float outsideShadow = smoothstep(shadowRadius - 0.003,
+                                           shadowRadius + 0.003, radius);
+          color *= outsideShadow;
 
-          // 黑洞史瓦西视界半径与光子球半径
-          float rs = 0.42;        // 物理视界
-          float rShadow = 0.58;   // 广义相对论光线阴影边界 (2.6 rs)
-          float rPhoton = 0.65;   // 光子球发光锐环
+          // Flattened orbital annulus. Its lower/front half is composited
+          // after the shadow so that hot matter crosses the black silhouette.
+          float planeCurve = -0.025 + 0.036
+            * (1.0 - exp(-p.x * p.x / 0.20));
+          vec2 disk = vec2(p.x, (p.y - planeCurve) / 0.12);
+          float diskRadius = length(disk);
+          float annulus = smoothstep(0.28, 0.335, diskRadius)
+            * (1.0 - smoothstep(0.65, 1.28, diskRadius));
+          float diskTexture = flowingTexture(disk, diskRadius);
+          float beaming = orbitalBeaming(disk, diskRadius);
+          float radialHeat = 0.18 + 0.82 * exp(-(diskRadius - 0.32) * 2.9);
+          float diskLight = annulus * radialHeat * diskTexture * beaming;
+          float front = 1.0 - smoothstep(-0.003, 0.003, p.y - planeCurve);
+          color += thermalLight(diskLight * 1.55)
+            * mix(outsideShadow, 1.0, front);
 
-          // 1. 黑洞中央纯黑阴影 (Event Horizon Shadow)
-          if (r < rShadow) {
-            // 冲入视界穿透奇点时的纯白光爆转场 (Singularity Flash)
-            if (uZoom > 3.2) {
-              float flash = smoothstep(3.2, 7.2, uZoom);
-              vec3 flashCol = mix(vec3(0.0), vec3(1.0, 0.98, 0.94), flash);
-              gl_FragColor = vec4(flashCol, uOpacity);
-              return;
-            }
-            // 视界内部纯黑
-            float shadowEdge = smoothstep(rShadow - 0.015, rShadow, r);
-            vec3 edgeGlow = vec3(0.9, 0.35, 0.1) * shadowEdge * 0.4;
-            gl_FragColor = vec4(edgeGlow, uOpacity);
-            return;
-          }
+          // Rear-disk images: a broad upper arch and a thinner lower image.
+          // Both rear images sample the same rear-disk flow. The source radius
+          // is an analytic lens mapping, not a relativistic geodesic solution.
+          float lensRadius = length(vec2(p.x, p.y * 1.04));
+          float sourceRadius = 0.35 + abs(lensRadius - 0.332) * 2.8;
+          vec2 sourceDirection = normalize(vec2(p.x, abs(p.y) * 1.04) + vec2(0.00001));
+          vec2 rearDisk = sourceDirection * sourceRadius;
+          float archTexture = flowingTexture(rearDisk, sourceRadius);
+          float archBeaming = orbitalBeaming(rearDisk, sourceRadius);
+          float upper = smoothstep(-0.025, 0.025, p.y);
+          float upperArch = gaussian(lensRadius - 0.345, 0.033) * upper;
+          float lowerArch = gaussian(lensRadius - 0.300, 0.016) * (1.0 - upper);
+          float archCore = gaussian(lensRadius - 0.332, 0.011) * upper;
+          float lensLight = (upperArch * 0.9 + lowerArch * 0.52
+            + archCore * 0.32) * archTexture * archBeaming;
+          color += thermalLight(lensLight * 1.5) * outsideShadow;
+          color += vec3(0.50, 0.16, 0.055)
+            * gaussian(lensRadius - 0.35, 0.078) * archBeaming * 0.12;
 
-          // 2. 引力透镜光线弯折吸积盘模型
-          // 倾斜吸积盘投影映射 (模拟 Gargantua 几何双环)
-          vec2 diskUV = uv;
-          diskUV.y /= 0.28; // 倾角压扁椭圆
+          // A delicate photon-ring cue remains distinct from the disk.
+          float photonRing = gaussian(radius - 0.257, 0.0017);
+          color += vec3(0.8, 0.63, 0.44) * photonRing * 0.34;
+          color *= uEndFade;
 
-          // 极坐标变换模拟高速旋转与引力偏折
-          float diskR = length(diskUV);
-          float diskPhi = atan(diskUV.y, diskUV.x);
-
-          // 相对论多普勒集束效应 (Doppler Beaming):
-          // 气体从左向右旋转，左侧吸积物质迎向观测者，呈现蓝移与显著增亮；右侧远离而昏暗
-          float doppler = 1.0 - 0.55 * sin(phi);
-
-          // 上下透镜光环 (Gravitational Lensing Ring: 背面被弯折到上方和下方的像)
-          float topLensedRing = abs(r - 0.88);
-          float bottomLensedRing = abs(r - 0.64);
-          float lensGlow = exp(-topLensedRing * 12.0) + exp(-bottomLensedRing * 16.0);
-
-          // 吸积盘主径向分布 (半径 0.65 到 2.4)
-          float diskMask = smoothstep(0.62, 0.85, diskR) * (1.0 - smoothstep(1.2, 2.5, diskR));
-
-          // 吸积盘动态湍流与螺旋丝状纹理
-          float flowTime = uTime * 1.5;
-          float diskNoise = noise(vec2(diskR * 14.0 - flowTime * 2.0, diskPhi * 4.0 + flowTime));
-          diskNoise += 0.5 * noise(vec2(diskR * 28.0, diskPhi * 8.0 - flowTime * 3.0));
-
-          float diskBrightness = diskMask * (0.35 + 0.65 * diskNoise) * doppler;
-          diskBrightness += lensGlow * 0.55 * doppler;
-
-          // 光子球极薄金环 (Photon Sphere Ring)
-          float photonRing = exp(-abs(r - rPhoton) * 40.0) * 1.4;
-          diskBrightness += photonRing;
-
-          // 3. 颜色梯度：纯白高热内圈 -> 炽烈金橙 -> 深红外围
-          vec3 colWhite = vec3(1.0, 0.96, 0.90);
-          vec3 colGold = vec3(0.98, 0.55, 0.15);
-          vec3 colRed = vec3(0.75, 0.12, 0.02);
-
-          vec3 finalColor = vec3(0.0);
-          finalColor += colWhite * pow(diskBrightness, 3.4) * 1.1;
-          finalColor += colGold * pow(diskBrightness, 1.8) * 1.0;
-          finalColor += colRed * diskBrightness * 0.7;
-
-          // 4. 背景暗星云与引力畸变微光
-          float outerGlow = exp(-r * 1.2) * 0.15;
-          finalColor += vec3(0.2, 0.08, 0.04) * outerGlow;
-
-          // 冲入视界时光爆纯白过渡 (uZoom 很大时)
-          if (uZoom > 4.5) {
-            float flash = smoothstep(4.5, 7.5, uZoom);
-            finalColor = mix(finalColor, vec3(1.0), flash);
-          }
-
-          gl_FragColor = vec4(finalColor, uOpacity);
+          gl_FragColor = vec4(color, uOpacity);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
         }
       `,
       transparent: true,
@@ -144,25 +224,19 @@ export class Scene06_EventHorizon {
     });
 
     this.mesh = new THREE.Mesh(quadGeo, this.material);
+    this.mesh.frustumCulled = false;
     this.group.add(this.mesh);
   }
 
   update(time, opacity) {
-    const sceneStart = 55.5;
-    const progress = Math.min(Math.max((time - sceneStart) / 12.0, 0.0), 1.0);
-
-    // 镜头逐渐推进，最后 2 秒加速冲破视界
-    let zoom = 1.0;
-    if (progress < 0.75) {
-      zoom = 1.0 + progress * 0.8;
-    } else {
-      const rushP = (progress - 0.75) / 0.25;
-      zoom = 1.8 + Math.pow(rushP, 3.0) * 6.5;
-    }
+    const progress = getChapterProgress(6, time);
+    // Gentle approach first; the silhouette stays readable at 66.5 seconds.
+    const zoom = 1 + progress * 0.3 + 1.25 * smoothstep(0.65, 0.93, progress);
 
     this.material.uniforms.uTime.value = time;
     this.material.uniforms.uOpacity.value = opacity;
     this.material.uniforms.uZoom.value = zoom;
+    this.material.uniforms.uEndFade.value = 1 - smoothstep(0.96, 1, progress);
 
     this.group.visible = opacity > 0.001;
   }

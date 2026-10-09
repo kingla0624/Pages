@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { GlobalClock, CHAPTERS } from './core/Clock.js';
+import { GlobalClock } from './core/Clock.js';
 import { HUDController } from './core/HUD.js';
 import { AudioEngine } from './audio/AudioEngine.js';
 import { Director } from './core/Director.js';
 
 /**
- * main.js - 《物理之美》像素级复刻核心主入口
+ * main.js - 《物理之美》实时视觉演绎主入口
  * 初始化 WebGL 渲染管线、时间轴、HUD 遥测系统、程序化音效与一镜到底运镜系统
  */
 
@@ -37,6 +37,7 @@ class App {
     this.hud = new HUDController(this.clock);
     this.audio = new AudioEngine();
     this.director = new Director(this.scene, this.camera);
+    this.clock.onSeek = () => this.audio.resetTransport();
 
     // 3. 绑定 UI 交互事件
     this.bindEvents();
@@ -139,6 +140,7 @@ class App {
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space') {
         e.preventDefault();
+        if (e.repeat) return;
         this.clock.togglePlay();
         this.syncPlayStateUI();
       } else if (e.code === 'ArrowRight') {
@@ -148,9 +150,11 @@ class App {
         e.preventDefault();
         this.clock.seek(this.clock.currentTime - 5.0);
       } else if (e.code === 'KeyM') {
+        if (e.repeat) return;
         const isMuted = this.audio.toggleMute();
         btnAudio.classList.toggle('muted', isMuted);
       } else if (e.code === 'KeyF') {
+        if (e.repeat) return;
         if (!document.fullscreenElement) {
           document.documentElement.requestFullscreen().catch(() => {});
         } else {
@@ -187,13 +191,13 @@ class App {
     this.hud.update(time);
 
     // 3. 更新音频引擎
-    this.audio.update(time, this.clock.currentChapterIndex, this.clock.isPlaying);
+    this.audio.update(time, this.clock.currentChapterIndex, this.clock.isPlaying, this.clock.playbackRate);
 
     // 4. 更新导演运镜与 3D 物理场景
     this.director.update(time);
 
     // 5. 渲染输出
-    this.renderer.render(this.scene, this.camera);
+    this.director.render(this.renderer, time);
   }
 }
 

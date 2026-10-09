@@ -1,234 +1,213 @@
-/**
- * HUD.js - 电影级科幻仪表界面联动控制器
- * 负责时码更新、对数刻度尺滑动定位、字幕状态机以及公式与参数的实时渲染
- */
+import { CHAPTERS, MERGER_TIME, getChapterProgress, getGravitationalWaveState, getOrbitYears, smoothstep } from './Timeline.js';
 
+/** Film captions, telemetry and reveal timing, all derived from the playback clock. */
 export class HUDController {
   constructor(clock) {
     this.clock = clock;
-
-    // DOM 元素缓存
-    this.elTimecode = document.getElementById('hud-timecode');
-    this.elChapterNum = document.getElementById('chapter-num');
-    this.elChapterEn = document.getElementById('chapter-en');
-    this.elChapterCn = document.getElementById('chapter-cn');
-    this.elRulerTrack = document.getElementById('ruler-track');
-    this.elRulerIndicator = document.getElementById('ruler-indicator');
-    this.elScaleExp = document.getElementById('scale-exp');
-    this.elReadoutFormula = document.getElementById('readout-formula');
-    this.elStrainCanvas = document.getElementById('strain-hud-canvas');
-    this.strainCtx = this.elStrainCanvas ? this.elStrainCanvas.getContext('2d') : null;
-
-    // 卡片与字幕
-    this.elTitleCard = document.getElementById('title-card');
-    this.elIntroEyebrow = document.getElementById('intro-eyebrow');
-    this.elSceneCaption = document.getElementById('scene-caption');
-    this.elCaptionTag = document.getElementById('caption-tag');
-    this.elCaptionMain = document.getElementById('caption-main');
-    this.elCaptionSub = document.getElementById('caption-sub');
-    this.elOrbitCounter = document.getElementById('orbit-counter');
-    this.elOrbitYearVal = document.getElementById('orbit-year-val');
-    this.elQuoteCard = document.getElementById('quote-card');
-    this.elEndCard = document.getElementById('end-card');
-
-    // 交互控件
-    this.elTimelineSlider = document.getElementById('timeline-slider');
-    this.elTimelineProgress = document.getElementById('timeline-progress');
+    const byId = id => document.getElementById(id);
+    this.elTimecode = byId('hud-timecode');
+    this.elChapterNum = byId('chapter-num');
+    this.elChapterEn = byId('chapter-en');
+    this.elChapterCn = byId('chapter-cn');
+    this.elRulerTrack = byId('ruler-track');
+    this.elRulerIndicator = byId('ruler-indicator');
+    this.elScaleExp = byId('scale-exp');
+    this.elReadoutFormula = byId('readout-formula');
+    this.elStrainCanvas = byId('strain-hud-canvas');
+    this.strainCtx = this.elStrainCanvas?.getContext('2d');
+    this.elTitleCard = byId('title-card');
+    this.elIntroEyebrow = byId('intro-eyebrow');
+    this.elIntroTitleGroup = byId('intro-title-group');
+    this.elIntroSubtitle = byId('intro-subtitle');
+    this.elIntroFullscreen = byId('btn-intro-fullscreen');
+    this.elSceneCaption = byId('scene-caption');
+    this.elCaptionTag = byId('caption-tag');
+    this.elCaptionMain = byId('caption-main');
+    this.elCaptionSub = byId('caption-sub');
+    this.elOrbitCounter = byId('orbit-counter');
+    this.elOrbitYearVal = byId('orbit-year-val');
+    this.elQuoteCard = byId('quote-card');
+    this.elEndCard = byId('end-card');
+    this.elTimelineSlider = byId('timeline-slider');
+    this.elTimelineProgress = byId('timeline-progress');
+    this.elTop = document.querySelector('.hud-top');
+    this.elBottom = document.querySelector('.hud-bottom');
+    this.elRecDot = document.querySelector('.rec-dot');
+    this.filmOverlays = document.querySelectorAll('.film-vignette, .anamorphic-flare');
     this.pillButtons = document.querySelectorAll('.pill-btn');
     this.lastActiveChapterId = -1;
-
-    this.minScaleExp = -35;
-    this.maxScaleExp = 26;
-
+    this.lastRulerExponent = null;
+    this.rulerTicks = [];
     this.initRulerTicks();
   }
 
-  /**
-   * 初始化刻度尺的物理刻度与数字标识
-   */
   initRulerTicks() {
     this.elRulerTrack.innerHTML = '';
-    const majorTicks = [-35, -20, -10, 0, 10, 20, 26];
-
-    // 每 5 个数量级绘制一个刻度
-    for (let exp = this.minScaleExp; exp <= this.maxScaleExp; exp += 5) {
-      const pct = ((exp - this.minScaleExp) / (this.maxScaleExp - this.minScaleExp)) * 100;
+    // A local thirty-order window moves continuously with the scale readout.
+    for (let exp = -50; exp <= 45; exp++) {
+      const major = exp % 5 === 0;
       const tick = document.createElement('div');
-      const isMajor = majorTicks.includes(exp);
-      tick.className = `ruler-tick ${isMajor ? 'major' : 'minor'}`;
-      tick.style.left = `${pct}%`;
+      tick.className = `ruler-tick ${major ? 'major' : 'minor'}`;
       this.elRulerTrack.appendChild(tick);
-
-      if (isMajor) {
-        const label = document.createElement('span');
+      let label = null;
+      if (major) {
+        label = document.createElement('span');
         label.className = 'ruler-label';
-        label.style.left = `${pct}%`;
-        label.innerText = exp;
+        label.textContent = exp;
         this.elRulerTrack.appendChild(label);
       }
+      this.rulerTicks.push({ exp, tick, label });
     }
+    this.elRulerIndicator.style.left = '50%';
   }
 
-  /**
-   * 逐帧同步刷新 HUD
-   */
+  setVisibility(element, opacity) {
+    const value = Math.min(Math.max(opacity, 0), 1);
+    element.style.opacity = value;
+    element.classList.toggle('visible', value > 0.001);
+    element.setAttribute('aria-hidden', value > 0.001 ? 'false' : 'true');
+  }
+
+  reveal(element, opacity) {
+    element.style.opacity = opacity;
+    element.style.transform = `translateY(${(1 - opacity) * 7}px)`;
+  }
+
   update(time) {
-    // 1. 刷新时码
-    this.elTimecode.innerText = this.clock.getTimecodeString();
-
-    // 2. 刷新章节与对数尺度标尺
+    this.elTimecode.textContent = this.clock.getTimecodeString();
     const chapter = this.clock.getCurrentChapter();
-    this.elChapterNum.innerText = chapter.key;
-    this.elChapterEn.innerText = chapter.en;
-    this.elChapterCn.innerText = chapter.cn;
+    this.elChapterNum.textContent = chapter.key;
+    this.elChapterEn.textContent = chapter.en;
+    this.elChapterCn.textContent = chapter.cn;
 
-    // 3. 计算对数游标位置
     const currentExp = this.clock.getCurrentScaleExponent();
-    const clampedExp = Math.min(Math.max(currentExp, this.minScaleExp), this.maxScaleExp);
-    const rulerPct = ((clampedExp - this.minScaleExp) / (this.maxScaleExp - this.minScaleExp)) * 100;
-    this.elRulerIndicator.style.left = `${rulerPct}%`;
-
-    // 4. 右侧空间尺度读数
-    this.elScaleExp.innerText = Math.round(currentExp);
-
-    // 5. 进度条联动
-    const progressPct = (time / this.clock.totalDuration) * 100;
-    this.elTimelineProgress.style.width = `${progressPct}%`;
+    if (currentExp !== this.lastRulerExponent) {
+      for (const { exp, tick, label } of this.rulerTicks) {
+        const pct = ((exp - currentExp + 15) / 30) * 100;
+        tick.style.display = pct >= 0 && pct <= 100 ? '' : 'none';
+        tick.style.left = `${pct}%`;
+        if (label) {
+          label.style.display = pct > 2 && pct < 98 ? '' : 'none';
+          label.style.left = `${pct}%`;
+        }
+      }
+      this.lastRulerExponent = currentExp;
+    }
+    this.elScaleExp.textContent = Math.round(currentExp);
+    this.elTimelineProgress.style.width = `${(time / this.clock.totalDuration) * 100}%`;
     this.elTimelineSlider.value = time;
 
-    // 6. 更新高亮章节按钮 (仅在章节变更时更新 DOM class)
     if (this.lastActiveChapterId !== chapter.id) {
-      this.pillButtons.forEach((btn) => {
-        const cId = parseInt(btn.getAttribute('data-chapter'), 10);
-        btn.classList.toggle('active', cId === chapter.id);
-      });
+      this.pillButtons.forEach(btn => btn.classList.toggle('active', Number(btn.dataset.chapter) === chapter.id));
       this.lastActiveChapterId = chapter.id;
     }
 
-    // 7. 更新各场景动态字幕与特殊指示器
-    this.updateCaptions(time, chapter);
+    const telemetryOpacity = 1 - smoothstep(67.6, 68.25, time);
+    this.elTop.style.opacity = telemetryOpacity;
+    this.elBottom.style.opacity = telemetryOpacity;
+    this.elRecDot.style.opacity = 0.55 + 0.45 * Math.pow(Math.cos(time * Math.PI / 1.6), 2);
+    const endFade = 1 - smoothstep(75, 76, time);
+    this.filmOverlays.forEach(element => { element.style.opacity = endFade; });
+    this.updateCaptions(time, chapter, endFade);
   }
 
-  updateCaptions(time, chapter) {
-    // 默认关闭所有卡片
-    this.elTitleCard.classList.remove('visible');
-    this.elSceneCaption.classList.remove('visible');
-    this.elOrbitCounter.classList.remove('visible');
-    this.elQuoteCard.classList.remove('visible');
-    this.elEndCard.classList.remove('visible');
-    this.elReadoutFormula.innerText = '';
-    if (this.elStrainCanvas) this.elStrainCanvas.style.display = 'none';
+  updateCaptions(time, chapter, endFade = 1 - smoothstep(75, 76, time)) {
+    for (const element of [this.elTitleCard, this.elSceneCaption, this.elOrbitCounter, this.elQuoteCard, this.elEndCard]) {
+      this.setVisibility(element, 0);
+    }
+    this.elReadoutFormula.textContent = '';
+    this.elStrainCanvas.style.display = 'none';
+    this.elIntroFullscreen.style.pointerEvents = 'none';
 
-    // ==========================================
-    // 00 PLANCK SCALE (0.0s - 5.5s)
-    // ==========================================
-    if (time < 5.5) {
-      this.elTitleCard.classList.add('visible');
-      if (time < 2.0) {
-        this.elIntroEyebrow.style.opacity = '1';
+    if (chapter.id === 0) {
+      // The frame compositor takes over this title at 5.65s without a fade/reappearance.
+      const card = time < 5.65 ? smoothstep(0, 0.4, time) : 0;
+      this.setVisibility(this.elTitleCard, card);
+      this.elIntroEyebrow.style.opacity = 1 - smoothstep(1.45, 1.85, time);
+      this.elIntroTitleGroup.style.opacity = smoothstep(1.8, 2.4, time);
+      this.elIntroSubtitle.style.opacity = smoothstep(2.4, 3.0, time);
+      const prompt = smoothstep(3.4, 4.0, time);
+      this.elIntroFullscreen.style.opacity = prompt;
+      this.elIntroFullscreen.style.pointerEvents = card * prompt > 0.5 ? 'auto' : 'none';
+      return;
+    }
+
+    if (chapter.id === 7) {
+      const quote = smoothstep(68.3, 69.0, time) * (1 - smoothstep(72.55, 73.0, time));
+      const title = smoothstep(73.0, 73.6, time) * endFade;
+      this.setVisibility(this.elQuoteCard, quote);
+      this.setVisibility(this.elEndCard, title);
+      return;
+    }
+
+    const elapsed = getChapterProgress(chapter.id, time) * (chapter.end - chapter.start);
+    const chapterFade = 1 - smoothstep(chapter.end - 0.7, chapter.end - 0.2, time);
+    const tagOpacity = smoothstep(0.8, 1.3, elapsed);
+    let mainOpacity = smoothstep(1.5, 2.3, elapsed);
+    let subOpacity = smoothstep(7.2, 7.9, elapsed);
+    let tag = '';
+    let main = '';
+    let sub = '';
+
+    if (chapter.id === 1) {
+      tag = '01 · DOUBLE SLIT';
+      main = '每一个电子，\n都留下一个落点';
+      sub = '单个落点不可预测；许多电子，显出波的干涉条纹';
+    } else if (chapter.id === 2) {
+      tag = '02 · DOUBLE PENDULUM';
+      main = '初始角度只差 0.001°，\n轨迹却分道扬镳';
+      sub = '确定的方程，对初始条件极度敏感 · 模拟时间 ×2.5';
+      subOpacity = smoothstep(6.6, 7.3, elapsed);
+    } else if (chapter.id === 3) {
+      tag = '03 · GRAVITATIONAL WAVES';
+      main = '两个黑洞相撞，\n时空泛起涟漪';
+      sub = '2015 年，人类首次直接探测到引力波';
+      subOpacity = smoothstep(MERGER_TIME - 0.2, MERGER_TIME + 0.6, time);
+      this.elStrainCanvas.style.display = 'block';
+      this.elStrainCanvas.style.opacity = chapterFade * tagOpacity;
+      this.drawStrainWave(time);
+    } else if (chapter.id === 4) {
+      tag = '04 · ORBITAL RESONANCE';
+      main = '地球 8 圈，金星约 13 圈，\n连线开出一朵五瓣花';
+      sub = '接近整数比的周期，留下太阳系的数学几何';
+      this.setVisibility(this.elOrbitCounter, tagOpacity * chapterFade);
+      this.elOrbitYearVal.textContent = getOrbitYears(time).toFixed(1);
+    } else if (chapter.id === 5) {
+      tag = '05 · COSMIC WEB';
+      if (elapsed < 7.1) {
+        main = '每一个光点，\n都是一个星系';
+        sub = '可观测宇宙，直径约 930 亿光年';
+        mainOpacity *= 1 - smoothstep(6.6, 7.1, elapsed);
+        subOpacity = smoothstep(4.8, 5.5, elapsed) * (1 - smoothstep(6.6, 7.1, elapsed));
       } else {
-        this.elIntroEyebrow.style.opacity = '0.3';
+        main = '走近一个星系……';
+        sub = '星系中心，可能藏着超大质量黑洞';
+        mainOpacity = smoothstep(7.1, 7.7, elapsed);
+        subOpacity = smoothstep(8.1, 8.7, elapsed);
       }
-      return;
-    }
-
-    // ==========================================
-    // 01 QUANTUM (5.5s - 15.5s)
-    // ==========================================
-    if (time >= 5.5 && time < 15.5) {
-      this.elSceneCaption.classList.add('visible');
-      this.elCaptionTag.innerText = '01 - DOUBLE SLIT';
-      this.elCaptionMain.innerText = '每一个电子，都同时穿过了两条缝';
-      this.elCaptionSub.innerText = '单个电子随机落下，千万个电子显现出波的条纹';
-      return;
-    }
-
-    // ==========================================
-    // 02 CHAOS (15.5s - 25.5s)
-    // ==========================================
-    if (time >= 15.5 && time < 25.5) {
-      this.elSceneCaption.classList.add('visible');
-      this.elCaptionTag.innerText = '02 - DOUBLE PENDULUM';
-      this.elCaptionMain.innerText = '初始角度只差 0.001°，几秒后，命运完全不同';
-      this.elCaptionSub.innerText = '确定的方程，不可预测的未来——这就是混沌';
-      return;
-    }
-
-    // ==========================================
-    // 03 GRAVITATIONAL WAVES (25.5s - 35.5s)
-    // ==========================================
-    if (time >= 25.5 && time < 35.5) {
-      this.elSceneCaption.classList.add('visible');
-      this.elCaptionTag.innerText = '03 - GRAVITATIONAL WAVES';
-      this.elCaptionMain.innerText = '13 亿年前，两个黑洞相撞。2015 年，人类听见了时空的涟漪';
-      this.elCaptionSub.innerText = '时空度规产生拉伸与压缩，携带引力辐射横跨宇宙';
-      if (this.elStrainCanvas) {
-        this.elStrainCanvas.style.display = 'block';
-        this.drawStrainWave(time);
-      }
-      return;
-    }
-
-    // ==========================================
-    // 04 ORBITS (35.5s - 45.5s)
-    // ==========================================
-    if (time >= 35.5 && time < 45.5) {
-      this.elSceneCaption.classList.add('visible');
-      this.elOrbitCounter.classList.add('visible');
-      this.elCaptionTag.innerText = '04 - ORBITAL RESONANCE';
-      this.elCaptionMain.innerText = '地球绕太阳 8 圈，金星恰好 13 圈。它们的连线，开出一朵五瓣花';
-      this.elCaptionSub.innerText = '引力与公转周期的近共振，谱写太阳系最浪漫的数学几何';
-
-      // 动态计算年数递增 (1.1 年 ~ 8.7 年)
-      const orbitProgress = (time - 35.5) / 10.0;
-      const currentYear = (1.1 + orbitProgress * (8.7 - 1.1)).toFixed(1);
-      this.elOrbitYearVal.innerText = currentYear;
-      return;
-    }
-
-    // ==========================================
-    // 05 COSMIC WEB (45.5s - 55.5s)
-    // ==========================================
-    if (time >= 45.5 && time < 55.5) {
-      this.elSceneCaption.classList.add('visible');
-      this.elCaptionTag.innerText = '05 - COSMIC WEB';
-      if (time < 52.5) {
-        this.elCaptionMain.innerText = '每一个光点，都是一个星系';
-        this.elCaptionSub.innerText = '可观测宇宙：直径约 930 亿光年';
+    } else if (chapter.id === 6) {
+      tag = '06 · EVENT HORIZON';
+      if (elapsed < 6.3) {
+        main = '连光，\n也无法逃脱';
+        sub = '吸积盘的光，在弯曲时空中绕行 · 艺术示意';
+        mainOpacity *= 1 - smoothstep(5.8, 6.3, elapsed);
+        subOpacity = smoothstep(4.0, 4.7, elapsed) * (1 - smoothstep(5.8, 6.3, elapsed));
       } else {
-        this.elCaptionMain.innerText = '而在每个星系的中心……';
-        this.elCaptionSub.innerText = '超大质量引力奇点正在扭曲一切';
+        main = '2019 年，\n我们看见黑洞的影子';
+        sub = 'M87* · 首张图像由毫米波观测重建';
+        mainOpacity = smoothstep(6.3, 6.9, elapsed);
+        subOpacity = smoothstep(7.4, 8.0, elapsed);
       }
-      return;
+      this.elReadoutFormula.textContent = 'rₛ = 2GM / c²';
     }
 
-    // ==========================================
-    // 06 EVENT HORIZON (55.5s - 67.5s)
-    // ==========================================
-    if (time >= 55.5 && time < 67.5) {
-      this.elSceneCaption.classList.add('visible');
-      this.elCaptionTag.innerText = '06 - EVENT HORIZON';
-      if (time < 61.5) {
-        this.elCaptionMain.innerText = '连光，也无法逃脱';
-        this.elCaptionSub.innerText = '引力将光路扭曲成环，形成璀璨的相对论吸积盘';
-      } else {
-        this.elCaptionMain.innerText = '2019 年·M87* 人类第一次看见了黑洞的影子';
-        this.elCaptionSub.innerText = '穿破光子球层与事件视界，走向物理学的极度终局';
-      }
-      this.elReadoutFormula.innerText = 'rs = 2GM / c²';
-      return;
-    }
-
-    // ==========================================
-    // 07 EPILOGUE (67.5s - 76.0s)
-    // ==========================================
-    if (time >= 67.5) {
-      if (time < 72.0) {
-        this.elQuoteCard.classList.add('visible');
-      } else {
-        this.elEndCard.classList.add('visible');
-      }
-    }
+    this.setVisibility(this.elSceneCaption, chapterFade * tagOpacity);
+    this.elCaptionTag.textContent = tag;
+    this.elCaptionMain.textContent = main;
+    this.elCaptionSub.textContent = sub;
+    this.reveal(this.elCaptionTag, tagOpacity);
+    this.reveal(this.elCaptionMain, mainOpacity);
+    this.reveal(this.elCaptionSub, subOpacity);
   }
 
   drawStrainWave(time) {
@@ -236,44 +215,27 @@ export class HUDController {
     const ctx = this.strainCtx;
     const w = this.elStrainCanvas.width;
     const h = this.elStrainCanvas.height;
-
+    const chapter = CHAPTERS[3];
+    const duration = chapter.end - chapter.start;
     ctx.clearRect(0, 0, w, h);
-
-    // 细浅基线
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.13)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(0, h / 2);
-    ctx.lineTo(w, h / 2);
+    ctx.moveTo(0, h / 2 + 5);
+    ctx.lineTo(w, h / 2 + 5);
     ctx.stroke();
+    ctx.fillStyle = '#a66c54';
+    ctx.font = '9px "JetBrains Mono", monospace';
+    ctx.fillText('STRAIN h(t) · SCHEMATIC', 4, 11);
 
-    // 标签 STRAIN h(t)
-    ctx.fillStyle = '#e63926';
-    ctx.font = '10px "JetBrains Mono", monospace';
-    ctx.fillText('STRAIN h(t)', 6, 12);
-
-    // 绘制随时间前进的啁啾动态波形
-    const p = Math.min(Math.max((time - 25.5) / 10.0, 0.0), 1.0);
-    ctx.strokeStyle = '#e63926';
-    ctx.lineWidth = 1.8;
+    ctx.strokeStyle = '#dc8c66';
+    ctx.lineWidth = 1.1;
     ctx.beginPath();
-
-    const mergerX = w * 0.82;
-    const currentX = p * w;
-
-    for (let x = 0; x < w; x++) {
-      if (x > currentX) break;
-      let val = 0;
-      if (x < mergerX) {
-        const tToMerger = Math.max((mergerX - x) / mergerX, 0.02);
-        const amp = (1.0 - tToMerger * 0.8) * (h * 0.38);
-        const freq = 0.12 / Math.pow(tToMerger, 0.42);
-        val = Math.sin(x * freq + time * 12.0) * amp;
-      } else {
-        const dt = (x - mergerX) / (w - mergerX);
-        val = Math.sin(x * 0.4 + time * 6.0) * (h * 0.4) * Math.exp(-dt * 5.0);
-      }
-      const y = h / 2 - val;
+    const currentX = Math.floor(getChapterProgress(3, time) * (w - 1));
+    for (let x = 0; x <= currentX; x++) {
+      const sampleTime = chapter.start + (x / (w - 1)) * duration;
+      const signal = getGravitationalWaveState(sampleTime);
+      const y = h / 2 + 5 - signal.wave * h * 0.32;
       if (x === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }

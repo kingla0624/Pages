@@ -1,16 +1,18 @@
 import * as THREE from 'three';
+import { getChapterProgress, smoothstep } from '../core/Timeline.js';
 
 /**
  * Scene01_DoubleSlit.js - 量子双缝干涉实验
- * 精确模拟波动光学相干干涉条纹、蒙特卡洛随机单个粒子感光屏轰击与理论概率波曲线
+ * 相干波前、按干涉概率采样的逐粒子积累与后段揭示的概率曲线
  */
 export class Scene01_DoubleSlit {
   constructor() {
     this.group = new THREE.Group();
     this.group.name = 'Scene01_DoubleSlit';
 
-    this.slitDistance = 1.6; // 双缝间距 d
-    this.wavelength = 0.55;  // 波长 lambda
+    this.slitDistance = 2.4; // 双缝间距 d（示意单位）
+    this.slitWidth = 0.18; // 缝宽 a：挡板、波场与探测概率共用
+    this.wavelength = 0.38;  // 波长 lambda
     this.screenDistance = 9.0; // 双缝到探测屏距离 L
 
     this.initWaveFloor();
@@ -23,27 +25,31 @@ export class Scene01_DoubleSlit {
    * 1. 地面干涉波纹网格着色器
    */
   initWaveFloor() {
-    const floorGeo = new THREE.PlaneGeometry(16, 12, 180, 140);
+    const floorGeo = new THREE.PlaneGeometry(16, 16);
     floorGeo.rotateX(-Math.PI / 2);
 
     this.floorMat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
         uOpacity: { value: 1.0 },
+        uRevealRadius: { value: 0 },
         uSlitDist: { value: this.slitDistance },
+        uSlitWidth: { value: this.slitWidth },
         uWavelength: { value: this.wavelength }
       },
       vertexShader: `
         varying vec2 vWorldPos;
         void main() {
-          vWorldPos = vec2(position.x, position.z);
+          vWorldPos = (modelMatrix * vec4(position, 1.0)).xz;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: `
         uniform float uTime;
         uniform float uOpacity;
+        uniform float uRevealRadius;
         uniform float uSlitDist;
+        uniform float uSlitWidth;
         uniform float uWavelength;
         varying vec2 vWorldPos;
 
@@ -52,40 +58,35 @@ export class Scene01_DoubleSlit {
           float x = vWorldPos.x;
           float z = vWorldPos.y; // 对应三维世界中的 z 轴深度
 
-          if (z < 0.0) {
-            // 双缝前方的入射平行波
-            float incWave = cos(z * 6.0 - uTime * 6.0) * 0.5 + 0.5;
-            float falloff = smoothstep(-6.0, 0.0, z);
-            gl_FragColor = vec4(vec3(0.9, 0.4, 0.2) * incWave * falloff * 0.4, uOpacity);
-            return;
-          }
-
-          // 双缝后方的相干干涉球面波
-          vec2 s1 = vec2(-uSlitDist * 0.5, 0.0);
-          vec2 s2 = vec2(uSlitDist * 0.5, 0.0);
-          vec2 p = vec2(x, z);
-
-          float r1 = length(p - s1);
-          float r2 = length(p - s2);
-
           float k = 6.2831853 / uWavelength;
-          float phase1 = k * r1 - uTime * 6.0;
-          float phase2 = k * r2 - uTime * 6.0;
-
-          // 叠加波场 psi = (cos(phase1) + cos(phase2)) / sqrt(r)
-          float psi = cos(phase1) / sqrt(max(r1, 0.4)) + cos(phase2) / sqrt(max(r2, 0.4));
-          float intensity = psi * psi * 0.25;
-
-          // 几何干涉条纹发光
-          vec3 warmColor = vec3(0.9, 0.35, 0.15);
-          vec3 crestColor = vec3(1.0, 0.85, 0.7);
-          vec3 col = mix(warmColor * intensity, crestColor * pow(intensity, 1.5), 0.5);
-
-          // 边缘平滑淡出
-          float distFalloff = 1.0 - smoothstep(4.0, 10.0, z);
-          col *= distFalloff;
-
+          vec3 col = vec3(0.007, 0.008, 0.010);
+          if (z < 0.0) {
+            // 法线朝上的入射区：相位沿 +z 传播，清楚展示平行波前。
+            float crest = pow(0.5 + 0.5 * cos(k * z - uTime * 5.2), 12.0);
+            float edge = smoothstep(-6.5, -5.4, z) * (1.0 - smoothstep(6.0, 8.0, abs(x)));
+            col += vec3(0.52, 0.53, 0.56) * crest * edge;
+          } else {
+            vec2 p = vec2(x, z);
+            float r1 = length(p - vec2(-uSlitDist * 0.5, 0.0));
+            float r2 = length(p - vec2(uSlitDist * 0.5, 0.0));
+            float phase1 = k * r1 - uTime * 5.2;
+            float phase2 = k * r2 - uTime * 5.2;
+            float wave = 0.5 * (cos(phase1) + cos(phase2));
+            float intensity = wave * wave;
+            float sinTheta = x / max(length(p), 0.00001);
+            float beta = 3.14159265 * uSlitWidth * sinTheta / uWavelength;
+            float diffraction = abs(beta) < 0.00001 ? 1.0 : sin(beta) / beta;
+            float crests = 0.5 * (pow(0.5 + 0.5 * cos(phase1), 14.0) + pow(0.5 + 0.5 * cos(phase2), 14.0));
+            float radius = min(r1, r2);
+            float reveal = 1.0 - smoothstep(uRevealRadius - 0.55, uRevealRadius, radius);
+            float edge = (1.0 - smoothstep(7.5, 9.5, z)) * (1.0 - smoothstep(6.3, 8.0, abs(x)));
+            float attenuation = 1.0 / (1.0 + radius * 0.10);
+            // 中性圆弧保留两源波前；暖色的时间平均正比于探测概率。
+            col += (vec3(0.32, 0.33, 0.35) * crests + vec3(0.60, 0.27, 0.13) * intensity * diffraction * diffraction) * reveal * edge * attenuation;
+          }
           gl_FragColor = vec4(col, uOpacity);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
         }
       `,
       transparent: true,
@@ -93,7 +94,7 @@ export class Scene01_DoubleSlit {
     });
 
     this.floorMesh = new THREE.Mesh(floorGeo, this.floorMat);
-    this.floorMesh.position.set(0, -0.05, 3.5);
+    this.floorMesh.position.set(0, -0.05, 1.5);
     this.group.add(this.floorMesh);
   }
 
@@ -101,36 +102,48 @@ export class Scene01_DoubleSlit {
    * 2. 前置双缝挡板与发光狭缝
    */
   initSlitBarrier() {
-    const barrierGeo = new THREE.PlaneGeometry(16, 2.5);
-    const barrierMat = new THREE.MeshBasicMaterial({
-      color: 0x0a0a0e,
-      side: THREE.DoubleSide
+    this.barrierMat = new THREE.MeshBasicMaterial({
+      color: 0x14151b,
+      transparent: true
     });
-    this.barrier = new THREE.Mesh(barrierGeo, barrierMat);
-    this.barrier.position.set(0, 1.25, 0);
+    this.barrier = new THREE.Group();
+    const slitWidth = this.slitWidth;
+    const halfWidth = 7.5;
+    const slitX = this.slitDistance * 0.5;
+    const spans = [[-halfWidth, -slitX - slitWidth / 2], [-slitX + slitWidth / 2, slitX - slitWidth / 2], [slitX + slitWidth / 2, halfWidth]];
+    const edgePoints = [];
+    for (const [left, right] of spans) {
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(right - left, 0.22, 0.09), this.barrierMat);
+      slab.position.set((left + right) / 2, 0.11, 0);
+      this.barrier.add(slab);
+      edgePoints.push(new THREE.Vector3(left, 0.225, -0.047), new THREE.Vector3(right, 0.225, -0.047));
+    }
+    this.edgeMat = new THREE.LineBasicMaterial({ color: 0xe0e4e8, transparent: true });
+    this.barrier.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(edgePoints), this.edgeMat));
     this.group.add(this.barrier);
 
-    // 细窄双缝高亮发光线
-    const slitGeo = new THREE.PlaneGeometry(0.08, 2.2);
-    const slitMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    // 缝隙位于真实挡板间隙，双面可见，低挡板不会遮住后方传播区域。
+    const slitGeo = new THREE.PlaneGeometry(slitWidth * 0.8, 0.24);
+    this.slitMat = new THREE.MeshBasicMaterial({ color: 0xfff0da, side: THREE.DoubleSide, transparent: true });
 
-    this.slitLeft = new THREE.Mesh(slitGeo, slitMat);
-    this.slitLeft.position.set(-this.slitDistance * 0.5, 1.1, 0.02);
+    this.slitLeft = new THREE.Mesh(slitGeo, this.slitMat);
+    this.slitLeft.position.set(-slitX, 0.12, -0.05);
     this.group.add(this.slitLeft);
 
-    this.slitRight = new THREE.Mesh(slitGeo, slitMat);
-    this.slitRight.position.set(this.slitDistance * 0.5, 1.1, 0.02);
+    this.slitRight = new THREE.Mesh(slitGeo, this.slitMat);
+    this.slitRight.position.set(slitX, 0.12, -0.05);
     this.group.add(this.slitRight);
 
     // 入射导引光束
-    const beamGeo = new THREE.PlaneGeometry(0.12, 6.0);
-    beamGeo.rotateX(Math.PI / 2);
-    const beamMat = new THREE.MeshBasicMaterial({
+    const beamGeo = new THREE.PlaneGeometry(0.045, 6.0);
+    beamGeo.rotateX(-Math.PI / 2);
+    this.beamMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.85
+      opacity: 0.14,
+      depthWrite: false
     });
-    this.beam = new THREE.Mesh(beamGeo, beamMat);
+    this.beam = new THREE.Mesh(beamGeo, this.beamMat);
     this.beam.position.set(0, 0.01, -3.0);
     this.group.add(this.beam);
   }
@@ -141,23 +154,29 @@ export class Scene01_DoubleSlit {
   initDetectorScreen() {
     // 感光背板
     const screenGeo = new THREE.PlaneGeometry(12, 3.2);
-    const screenMat = new THREE.MeshBasicMaterial({
-      color: 0x0c0c12,
-      side: THREE.DoubleSide
+    this.screenMat = new THREE.MeshBasicMaterial({
+      color: 0x05060a,
+      side: THREE.DoubleSide,
+      transparent: true
     });
-    this.screenMesh = new THREE.Mesh(screenGeo, screenMat);
+    this.screenMesh = new THREE.Mesh(screenGeo, this.screenMat);
     this.screenMesh.position.set(0, 1.6, this.screenDistance);
+    // 先绘制背板，避免透明排序让背板覆盖不写深度的电子粒子
+    this.screenMesh.renderOrder = -1;
     this.group.add(this.screenMesh);
+    const framePoints = [new THREE.Vector3(-6, 0, this.screenDistance - 0.005), new THREE.Vector3(6, 0, this.screenDistance - 0.005), new THREE.Vector3(6, 3.2, this.screenDistance - 0.005), new THREE.Vector3(-6, 3.2, this.screenDistance - 0.005)];
+    this.screenEdgeMat = new THREE.LineBasicMaterial({ color: 0x55555e, transparent: true, opacity: 0.7 });
+    this.group.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(framePoints), this.screenEdgeMat));
 
     // 荧光粒子轰击点 (采用 InstancedMesh 高性能渲染)
-    this.maxParticles = 3000;
+    this.maxParticles = 4800;
     this.currentParticleCount = 0;
-    const dotGeo = new THREE.CircleGeometry(0.038, 6);
+    const dotGeo = new THREE.CircleGeometry(0.016, 6);
     this.dotMat = new THREE.MeshBasicMaterial({
-      color: 0xffe2cc,
+      color: 0xffebdc,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.85,
       depthWrite: false
     });
 
@@ -168,23 +187,21 @@ export class Scene01_DoubleSlit {
 
     // 预计算符合量子概率密度的粒子落点并一次性填充至 InstancedMesh
     const dummy = new THREE.Object3D();
-    const d = this.slitDistance;
-    const L = this.screenDistance;
-    const lambda = this.wavelength;
+    // 场景本地固定种子：暂停、拖动及重新载入保持同一组实验落点。
+    let seed = 0x51f17;
+    const random = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
 
     for (let i = 0; i < this.maxParticles; i++) {
       // 拒绝采样获得干涉条纹横坐标 x
-      let x = (Math.random() - 0.5) * 10;
-      let prob = 0;
+      let x;
       while (true) {
-        x = (Math.random() - 0.5) * 10;
-        const beta = (Math.PI * 0.15 * x) / (lambda * L);
-        const alpha = (Math.PI * d * x) / (lambda * L);
-        const diffraction = beta === 0 ? 1 : Math.sin(beta) / beta;
-        prob = Math.cos(alpha) * Math.cos(alpha) * diffraction * diffraction;
-        if (Math.random() < prob) break;
+        x = (random() - 0.5) * 10;
+        if (random() < this.getDetectorProbability(x)) break;
       }
-      const y = 0.3 + Math.random() * 2.5;
+      const y = 0.18 + random() * 2.62;
       const z = this.screenDistance - 0.01;
 
       dummy.position.set(x, y, z);
@@ -199,41 +216,52 @@ export class Scene01_DoubleSlit {
    */
   initProbabilityCurve() {
     const points = [];
-    const d = this.slitDistance;
-    const L = this.screenDistance;
-    const lambda = this.wavelength;
-
     for (let x = -5.0; x <= 5.0; x += 0.05) {
-      const beta = (Math.PI * 0.15 * x) / (lambda * L);
-      const alpha = (Math.PI * d * x) / (lambda * L);
-      const diff = beta === 0 ? 1 : Math.sin(beta) / beta;
-      const intensity = Math.cos(alpha) * Math.cos(alpha) * diff * diff;
-      const y = 2.8 + intensity * 0.5; // 在屏幕上部弯曲
+      const intensity = this.getDetectorProbability(x);
+      const y = 3.32 + intensity * 0.55;
       points.push(new THREE.Vector3(x, y, this.screenDistance - 0.02));
     }
 
     const curveGeo = new THREE.BufferGeometry().setFromPoints(points);
     this.curveMat = new THREE.LineBasicMaterial({
-      color: 0xe63926,
+      color: 0xc95746,
       linewidth: 2,
       transparent: true,
-      opacity: 0.9
+      opacity: 0.75,
+      depthWrite: false
     });
     this.curveLine = new THREE.Line(curveGeo, this.curveMat);
     this.group.add(this.curveLine);
   }
 
+  getDetectorProbability(x) {
+    const L = this.screenDistance;
+    const d = this.slitDistance;
+    const lambda = this.wavelength;
+    // 与地面两源波场使用相同的精确光程差，远离轴线时也保持条纹一致。
+    const pathDifference = Math.hypot(x - d / 2, L) - Math.hypot(x + d / 2, L);
+    const sinTheta = x / Math.hypot(x, L);
+    const beta = Math.PI * this.slitWidth * sinTheta / lambda;
+    const diffraction = beta === 0 ? 1 : Math.sin(beta) / beta;
+    return Math.cos(Math.PI * pathDifference / lambda) ** 2 * diffraction ** 2;
+  }
+
   update(time, opacity) {
+    const progress = getChapterProgress(1, time);
     this.floorMat.uniforms.uTime.value = time;
     this.floorMat.uniforms.uOpacity.value = opacity;
-    this.curveMat.opacity = opacity * 0.9;
-    this.dotMat.opacity = opacity * 0.85;
+    this.floorMat.uniforms.uRevealRadius.value = smoothstep(0.02, 0.58, progress) * 14;
+    this.barrierMat.opacity = opacity;
+    this.slitMat.opacity = opacity;
+    this.edgeMat.opacity = opacity * 0.9;
+    this.screenMat.opacity = opacity;
+    this.screenEdgeMat.opacity = opacity * 0.7;
+    this.beamMat.opacity = opacity * 0.14;
+    this.curveMat.opacity = opacity * 0.75 * smoothstep(0.64, 0.91, progress);
+    this.dotMat.opacity = opacity * 0.9;
 
-    // 粒子累积发射逻辑 (在 5.5s ~ 15.5s 时间段内逐渐填满)
-    const sceneStart = 5.5;
-    const sceneDuration = 10.0;
-    const progress = Math.min(Math.max((time - sceneStart) / sceneDuration, 0), 1);
-    const targetCount = Math.floor(progress * this.maxParticles);
+    // 前半幕逐粒子落下，后半幕才显出统计条纹；不依赖前一次更新时间。
+    const targetCount = Math.floor(smoothstep(0.12, 1, progress) ** 4 * this.maxParticles);
 
     // 零 CPU 重传，直接控制 GPU 实例渲染数量
     this.instancedDots.count = targetCount;

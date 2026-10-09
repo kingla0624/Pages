@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { smoothstep } from '../core/Timeline.js';
 
 /**
  * Scene00_Planck.js - 普朗克尺度：量子泡沫与时空度规微观涨落
@@ -52,39 +53,29 @@ export class Scene00_Planck {
           float v = 0.0;
           v += 0.5000 * noise(p); p *= 2.01;
           v += 0.2500 * noise(p); p *= 2.02;
-          v += 0.1250 * noise(p); p *= 2.03;
           return v;
         }
 
         void main() {
-          vec2 uv = (vUv - 0.5) * 1.5;
+          vec2 uv = (vUv - 0.5) * 4.5;
           uv.x *= uResolution.x / uResolution.y;
 
-          float t = uTime * 0.18;
-          // 扭曲坐标计算多重拓扑场
-          vec2 q = vec2(fbm(uv * 0.75), fbm(uv * 0.75 + vec2(5.2, 1.3)));
-          vec2 r = vec2(fbm(uv * 0.75 + 2.4 * q + vec2(1.7 - t * 0.08, 9.2 + t * 0.1)),
-                        fbm(uv * 0.75 + 2.4 * q + vec2(8.3 - t * 0.09, 2.8 + t * 0.06)));
-          float f = fbm(uv * 0.75 + 2.4 * r);
-
-          // 提取等高线发光锐边
-          float isoline = abs(fract(f * 3.5) - 0.5) * 2.0;
-          float lineGlow = 1.0 - smoothstep(0.015, 0.12, isoline);
-
-          // 色彩渐变：深邃暗黑基底 + 炽白等高线 + 暗红外发光
-          vec3 baseColor = vec3(0.015, 0.008, 0.008);
-          vec3 glowColor = vec3(0.85, 0.25, 0.12);
-          vec3 whiteLine = vec3(0.95, 0.95, 0.98);
-
-          vec3 finalColor = baseColor;
-          finalColor += glowColor * lineGlow * 1.4;
-          finalColor += whiteLine * pow(lineGlow, 3.5) * 1.8;
-
-          // 中心柔和光芒
-          float centerLight = 1.0 - length(vUv - 0.5) * 1.4;
-          finalColor += vec3(0.9, 0.35, 0.15) * max(centerLight, 0.0) * 0.35;
-
+          // Gentle domain warping keeps large, readable contours and dark voids.
+          float t = uTime * 0.045;
+          vec2 q = vec2(fbm(uv * 0.7 + vec2(t, 0.0)),
+                        fbm(uv * 0.7 + vec2(5.2, 1.3 - t)));
+          float f = fbm(uv * 0.75 + 0.65 * q + vec2(t * 0.2, -t * 0.16));
+          float isoline = abs(fract(f * 2.0 + 0.5) - 0.5);
+          float aa = max(fwidth(isoline), 0.001);
+          float line = 1.0 - smoothstep(0.009, 0.009 + aa * 1.5, isoline);
+          float halo = exp(-isoline * 80.0);
+          float warmth = smoothstep(0.12, 0.5, f) * 0.18;
+          vec3 finalColor = vec3(0.0005) + vec3(0.46, 0.5, 0.56) * line;
+          finalColor += vec3(0.13, 0.14, 0.16) * halo;
+          finalColor += vec3(0.12, 0.025, 0.008) * halo * warmth;
           gl_FragColor = vec4(finalColor, uOpacity);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
         }
       `,
       transparent: true,
@@ -97,9 +88,11 @@ export class Scene00_Planck {
   }
 
   update(time, opacity) {
+    const reveal = time < 6 ? smoothstep(1.35, 2.5, time) : 1;
+    const ending = 1 - smoothstep(74.8, 76, time);
     this.material.uniforms.uTime.value = time;
-    this.material.uniforms.uOpacity.value = opacity;
-    this.group.visible = opacity > 0.001;
+    this.material.uniforms.uOpacity.value = opacity * reveal * ending;
+    this.group.visible = this.material.uniforms.uOpacity.value > 0.001;
   }
 
   onResize(width, height) {

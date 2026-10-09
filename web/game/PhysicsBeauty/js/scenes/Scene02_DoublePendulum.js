@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CHAPTERS } from '../core/Timeline.js';
 
 /**
  * Scene02_DoublePendulum.js - 混沌理论：双摆对初始条件的极端敏感性
@@ -16,8 +17,10 @@ export class Scene02_DoublePendulum {
     this.g = 9.81;
 
     // 预计算轨迹数据，保证时间轴随意拖动 (Seek) 时完全确定一致
-    this.maxSimulationTime = 12.0; // 涵盖 15.5s ~ 25.5s
-    this.dt = 0.002; // 高精度积分步长
+    this.simulationTimeScale = 2.5; // 将 25 秒物理演化压缩至 10 秒章节，保留可读的分叉过程
+    this.maxSimulationTime = 10.0 * this.simulationTimeScale;
+    this.dt = 0.002; // 历史采样间隔，保持 1200 点尾迹覆盖 2.4 秒
+    this.integrationDt = 0.0005; // 更小的 RK4 内部步长，抑制混沌放大的积分误差
     this.history1 = [];
     this.history2 = [];
 
@@ -97,6 +100,7 @@ export class Scene02_DoublePendulum {
     let s2 = { theta1: Math.PI / 2 + diffRad, theta2: Math.PI / 2, omega1: 0, omega2: 0 };
 
     const steps = Math.floor(this.maxSimulationTime / this.dt);
+    const integrationSubsteps = Math.round(this.dt / this.integrationDt);
     for (let i = 0; i <= steps; i++) {
       const t = i * this.dt;
 
@@ -113,8 +117,10 @@ export class Scene02_DoublePendulum {
       this.history1.push({ t, p1: [p1_x1, p1_y1], p2: [p1_x2, p1_y2] });
       this.history2.push({ t, p1: [p2_x1, p2_y1], p2: [p2_x2, p2_y2] });
 
-      s1 = this.rk4Step(s1, this.dt);
-      s2 = this.rk4Step(s2, this.dt);
+      for (let substep = 0; substep < integrationSubsteps; substep++) {
+        s1 = this.rk4Step(s1, this.integrationDt);
+        s2 = this.rk4Step(s2, this.integrationDt);
+      }
     }
   }
 
@@ -126,30 +132,31 @@ export class Scene02_DoublePendulum {
     canvas.width = 1024;
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, 1024, 512);
     ctx.font = '900 180px "JetBrains Mono", sans-serif';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
+    ctx.strokeStyle = 'rgba(210, 218, 228, 0.065)';
+    ctx.lineWidth = 1.2;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('CHAOS', 512, 256);
+    ctx.strokeText('CHAOS', 512, 256);
     const bgTex = new THREE.CanvasTexture(canvas);
+    bgTex.colorSpace = THREE.SRGBColorSpace;
+    this.bgMat = new THREE.MeshBasicMaterial({ map: bgTex, transparent: true, opacity: 0.8, depthWrite: false });
     const bgPlane = new THREE.Mesh(
       new THREE.PlaneGeometry(16, 8),
-      new THREE.MeshBasicMaterial({ map: bgTex, transparent: true, opacity: 0.8 })
+      this.bgMat
     );
     bgPlane.position.set(0, 0.5, -2.0);
     this.group.add(bgPlane);
 
     // 摆杆连线与关节
-    this.rodMat1 = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2, transparent: true });
+    this.rodMat1 = new THREE.LineBasicMaterial({ color: 0xe8edf1, transparent: true });
     this.rodPos1 = new Float32Array(3 * 3); // 3 个顶点 (pivot, joint, tip) * 3 分量
     this.rodGeo1 = new THREE.BufferGeometry();
     this.rodGeo1.setAttribute('position', new THREE.BufferAttribute(this.rodPos1, 3));
     this.rod1 = new THREE.Line(this.rodGeo1, this.rodMat1);
     this.group.add(this.rod1);
 
-    this.rodMat2 = new THREE.LineBasicMaterial({ color: 0xe63926, linewidth: 2, transparent: true });
+    this.rodMat2 = new THREE.LineBasicMaterial({ color: 0xd95740, transparent: true });
     this.rodPos2 = new Float32Array(3 * 3);
     this.rodGeo2 = new THREE.BufferGeometry();
     this.rodGeo2.setAttribute('position', new THREE.BufferAttribute(this.rodPos2, 3));
@@ -157,39 +164,44 @@ export class Scene02_DoublePendulum {
     this.group.add(this.rod2);
 
     // 关节小球
-    const jointGeo = new THREE.SphereGeometry(0.06, 16, 16);
-    this.ballPivot = new THREE.Mesh(jointGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    const jointGeo = new THREE.SphereGeometry(0.035, 16, 16);
+    this.ballPivot = new THREE.Mesh(jointGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true }));
     this.ballPivot.position.copy(this.pivot);
+    this.ballPivot.scale.setScalar(0.7);
     this.group.add(this.ballPivot);
 
-    this.ball1_1 = new THREE.Mesh(jointGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    this.ball1_2 = new THREE.Mesh(jointGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    this.ball1_1 = new THREE.Mesh(jointGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true }));
+    this.ball1_2 = new THREE.Mesh(jointGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true }));
     this.group.add(this.ball1_1, this.ball1_2);
 
-    this.ball2_1 = new THREE.Mesh(jointGeo, new THREE.MeshBasicMaterial({ color: 0xe63926 }));
-    this.ball2_2 = new THREE.Mesh(jointGeo, new THREE.MeshBasicMaterial({ color: 0xe63926 }));
+    this.ball2_1 = new THREE.Mesh(jointGeo, new THREE.MeshBasicMaterial({ color: 0xd95740, transparent: true }));
+    this.ball2_2 = new THREE.Mesh(jointGeo, new THREE.MeshBasicMaterial({ color: 0xd95740, transparent: true }));
     this.group.add(this.ball2_1, this.ball2_2);
 
     // 尾迹轨迹线
     this.maxTrailPoints = 1200;
     this.trailPos1 = new Float32Array(this.maxTrailPoints * 3);
+    this.trailColors = new Float32Array(this.maxTrailPoints * 3);
+    this.trailColorAttribute = new THREE.BufferAttribute(this.trailColors, 3);
     this.trailGeo1 = new THREE.BufferGeometry();
     this.trailGeo1.setAttribute('position', new THREE.BufferAttribute(this.trailPos1, 3));
-    this.trailMat1 = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+    this.trailGeo1.setAttribute('color', this.trailColorAttribute);
+    this.trailMat1 = new THREE.LineBasicMaterial({ color: 0xdde4eb, vertexColors: true, transparent: true, opacity: 0.6, depthWrite: false });
     this.trail1 = new THREE.Line(this.trailGeo1, this.trailMat1);
     this.group.add(this.trail1);
 
     this.trailPos2 = new Float32Array(this.maxTrailPoints * 3);
     this.trailGeo2 = new THREE.BufferGeometry();
     this.trailGeo2.setAttribute('position', new THREE.BufferAttribute(this.trailPos2, 3));
-    this.trailMat2 = new THREE.LineBasicMaterial({ color: 0xe63926, transparent: true, opacity: 0.85 });
+    this.trailGeo2.setAttribute('color', this.trailColorAttribute);
+    this.trailMat2 = new THREE.LineBasicMaterial({ color: 0xd95740, vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false });
     this.trail2 = new THREE.Line(this.trailGeo2, this.trailMat2);
     this.group.add(this.trail2);
   }
 
   update(time, opacity) {
-    const sceneStart = 15.5;
-    const simTime = Math.max(time - sceneStart, 0.0);
+    const sceneStart = CHAPTERS[2].start;
+    const simTime = Math.min(Math.max(time - sceneStart, 0.0) * this.simulationTimeScale, this.maxSimulationTime);
     const stepIdx = Math.min(Math.floor(simTime / this.dt), this.history1.length - 1);
 
     const h1 = this.history1[stepIdx];
@@ -239,6 +251,13 @@ export class Scene02_DoublePendulum {
       this.trailPos2[i * 3 + 0] = this.pivot.x + pt2[0];
       this.trailPos2[i * 3 + 1] = this.pivot.y + pt2[1];
       this.trailPos2[i * 3 + 2] = -0.005;
+
+      // 旧轨迹柔和退入背景，让刚刚分叉的末端保持清晰。
+      const age = i / Math.max(trailSpan - 1, 1);
+      const brightness = 0.12 + 0.88 * age * age;
+      this.trailColors[i * 3 + 0] = brightness;
+      this.trailColors[i * 3 + 1] = brightness;
+      this.trailColors[i * 3 + 2] = brightness;
     }
 
     this.trailGeo1.attributes.position.needsUpdate = true;
@@ -246,12 +265,19 @@ export class Scene02_DoublePendulum {
 
     this.trailGeo2.attributes.position.needsUpdate = true;
     this.trailGeo2.setDrawRange(0, trailSpan);
+    this.trailColorAttribute.needsUpdate = true;
 
     // 设置整体透明度
-    this.rodMat1.opacity = opacity;
-    this.rodMat2.opacity = opacity;
-    this.trailMat1.opacity = opacity * 0.85;
-    this.trailMat2.opacity = opacity * 0.85;
+    this.rodMat1.opacity = opacity * 0.9;
+    this.rodMat2.opacity = opacity * 0.78;
+    this.trailMat1.opacity = opacity * 0.6;
+    this.trailMat2.opacity = opacity * 0.55;
+    this.bgMat.opacity = opacity * 0.8;
+    this.ballPivot.material.opacity = opacity;
+    this.ball1_1.material.opacity = opacity;
+    this.ball1_2.material.opacity = opacity;
+    this.ball2_1.material.opacity = opacity;
+    this.ball2_2.material.opacity = opacity;
 
     this.group.visible = opacity > 0.001;
   }

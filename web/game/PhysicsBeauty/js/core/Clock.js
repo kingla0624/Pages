@@ -1,18 +1,10 @@
 /**
  * Clock.js - 核心时间控制器
- * 管理精准 60FPS 帧时间、时码生成 (00:00:SS:FF)、章节阶段状态与对数标尺连续插值
+ * 管理实际播放时间、60 FPS 格式时码、章节阶段与参考尺度连续插值
  */
 
-export const CHAPTERS = [
-  { id: 0, key: '00', en: 'PLANCK SCALE', cn: '普朗克尺度', start: 0.0, end: 5.5, expStart: -35, expEnd: -35 },
-  { id: 1, key: '01', en: 'QUANTUM', cn: '量子', start: 5.5, end: 15.5, expStart: -6, expEnd: -6 },
-  { id: 2, key: '02', en: 'CHAOS', cn: '混沌', start: 15.5, end: 25.5, expStart: 0, expEnd: 0 },
-  { id: 3, key: '03', en: 'GRAVITATIONAL WAVES', cn: '引力波', start: 25.5, end: 35.5, expStart: 5, expEnd: 5 },
-  { id: 4, key: '04', en: 'ORBITS', cn: '轨道', start: 35.5, end: 45.5, expStart: 11, expEnd: 12 },
-  { id: 5, key: '05', en: 'COSMIC WEB', cn: '宇宙网', start: 45.5, end: 55.5, expStart: 22, expEnd: 26 },
-  { id: 6, key: '06', en: 'EVENT HORIZON', cn: '事件视界', start: 55.5, end: 67.5, expStart: 13, expEnd: 13 },
-  { id: 7, key: '00', en: 'PLANCK SCALE', cn: '普朗克尺度', start: 67.5, end: 76.0, expStart: -35, expEnd: -35 }
-];
+import { CHAPTERS, getChapterProgress, getTransitionState, smoothstep } from './Timeline.js';
+export { CHAPTERS } from './Timeline.js';
 
 export class GlobalClock {
   constructor(totalDuration = 76.0) {
@@ -73,12 +65,17 @@ export class GlobalClock {
   }
 
   /**
-   * 计算当前时间点对应的平滑空间尺度对数值 (Exponent in 10^x meters)
+   * 计算主题参考尺度的平滑对数值 (10^x meters)，不是相机视域测量。
    */
   getCurrentScaleExponent() {
     const c = this.getCurrentChapter();
-    const progress = Math.min(Math.max((this.currentTime - c.start) / (c.end - c.start), 0.0), 1.0);
-    // 平滑插值
+    const transition = getTransitionState(this.currentTime);
+    if (transition) {
+      const previous = CHAPTERS[transition.from];
+      const next = CHAPTERS[transition.to];
+      return previous.expEnd + (next.expStart - previous.expEnd) * smoothstep(0, 1, transition.progress);
+    }
+    const progress = getChapterProgress(c.id, this.currentTime);
     const smoothT = progress * progress * (3 - 2 * progress);
     return c.expStart + (c.expEnd - c.expStart) * smoothT;
   }
@@ -102,13 +99,16 @@ export class GlobalClock {
     this.currentTime = Math.min(Math.max(time, 0.0), this.totalDuration);
     this.lastRealTimestamp = performance.now();
     this.updateChapterIndex();
+    this.onSeek?.(this.currentTime);
     this.notify();
   }
 
   seekToChapter(chapterId) {
     const target = CHAPTERS.find((c) => c.id === chapterId);
     if (target) {
-      this.seek(target.start + 0.05);
+      // A direct chapter jump should show the new scene after its transition.
+      const transition = getTransitionState(target.start);
+      this.seek((transition?.end ?? target.start) + 0.05);
     }
   }
 

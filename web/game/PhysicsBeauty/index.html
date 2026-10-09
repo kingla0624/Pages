@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>物理之美 (The Beauty of Physics) | 1:1 像素级复刻</title>
-  <meta name="description" content="基于 WebGL / Three.js / GLSL 打造的《物理之美》一镜到底视听作品：从普朗克长度到整个宇宙。">
+  <title>物理之美 (The Beauty of Physics) | WebGL 视听演绎</title>
+  <meta name="description" content="基于 WebGL / Three.js / GLSL 打造的《物理之美》视听演绎：从普朗克长度到整个宇宙。">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2245%22 fill=%22%23e63926%22/><circle cx=%2250%22 cy=%2250%22 r=%2220%22 fill=%22%23050507%22/></svg>">
   
   <link rel="stylesheet" href="./css/style.css">
@@ -46,27 +46,31 @@
       <!-- 片头主标题 -->
       <div class="title-card" id="title-card">
         <div class="intro-eyebrow" id="intro-eyebrow">从最小的尺度——</div>
+        <div id="intro-title-group">
         <h1 class="main-title">物理之美</h1>
         <div class="english-title">THE BEAUTY OF PHYSICS</div>
-        <div class="subtitle-desc">一镜到底：从普朗克长度，到整个宇宙</div>
+        <div class="subtitle-desc" id="intro-subtitle">从普朗克长度，到整个宇宙</div>
         <div class="fullscreen-prompt" id="btn-intro-fullscreen" title="进入全屏沉浸视听">
           <svg viewBox="0 0 24 24" width="13" height="13"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" fill="currentColor"/></svg>
           <span>开启全屏沉浸视听 · [F] 键切换</span>
+        </div>
         </div>
       </div>
 
       <!-- 场景字幕容器 -->
       <div class="scene-caption" id="scene-caption">
         <div class="caption-tag" id="caption-tag">01 - DOUBLE SLIT</div>
-        <div class="caption-main" id="caption-main">每一个电子，都同时穿过了两条缝</div>
-        <div class="caption-sub" id="caption-sub">单个电子随机落下，千万个电子显现出波的条纹</div>
+        <div class="caption-main" id="caption-main">每一个电子，都留下一个落点</div>
+        <div class="caption-sub" id="caption-sub">单个落点不可预测；许多电子，显出波的干涉条纹</div>
       </div>
 
       <!-- 场景特殊指示器 (例如：地金共振年数、黑洞公式) -->
       <div class="orbit-counter" id="orbit-counter">
-        <div class="orbit-ratio">EARTH : VENUS &nbsp; 8 : 13</div>
-        <div class="orbit-years"><span id="orbit-year-val">1.1</span> 年</div>
+        <div class="orbit-ratio">EARTH : VENUS &nbsp; ≈ 8 : 13</div>
+        <div class="orbit-years"><span id="orbit-year-val">0.0</span> 年</div>
       </div>
+
+      <canvas class="strain-plot" id="strain-hud-canvas" width="320" height="70" aria-label="引力波应变示意，合成波形"></canvas>
 
       <!-- 尾声爱因斯坦名言 -->
       <div class="quote-card" id="quote-card">
@@ -103,11 +107,10 @@
         </div>
       </div>
 
-      <!-- 右侧：空间尺度读数与物理量 -->
+      <!-- 右侧：主题参考尺度与物理量；不是相机视域测量 -->
       <div class="scale-readout">
-        <canvas id="strain-hud-canvas" width="220" height="48" style="display:none; margin-bottom: 4px;"></canvas>
         <div class="readout-formula" id="readout-formula"></div>
-        <div class="readout-label">空间尺度</div>
+        <div class="readout-label" title="各主题的典型空间数量级，仅作示意，不代表相机视域测量">参考尺度</div>
         <div class="readout-value">
           <span class="base">10</span><sup class="exp" id="scale-exp">-35</sup><span class="unit">m</span>
         </div>
