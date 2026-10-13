@@ -67,84 +67,35 @@
     const canvas = document.getElementById('sky');
 
     // A slightly elevated view separates the near disk from its lensed image.
-    // Schwarzschild geometry, NT thin-disk flux and visible thermal radiance.
+    // Schwarzschild geometry; blackbody chromaticity with bolometric brightness.
     const DIST = 22.0;
     const INCL = 9.0 * Math.PI / 180;
     const CAM = new THREE.Vector3(0, DIST * Math.sin(INCL), -DIST * Math.cos(INCL));
     const FOCAL = 1.3;                 // half-height coordinates: fovY ~ 42 deg
     const MAX_PIXELS = 2.4e6;          // bound the ray integration and bloom cost
 
-    // Planck spectra integrated against CIE 1931 2-degree CMFs. RGB stores
-    // unit-luminance linear sRGB chromaticity; W stores log(Y / Y at 4500 K).
-    // Log-spaced samples from 1000 to 20000 K preserve visible-band radiance,
-    // including its temperature dependence, without a runtime data download.
+    // Planck spectra integrated against CIE 1931 2-degree CMFs, then converted
+    // to linear sRGB, gamut-clipped and normalized to luminance 1. Log-spaced
+    // temperatures from 1000 to 20000 K; no runtime data download is needed.
     // Source: https://doi.org/10.25039/CIE.DS.xvudnb9b
     const blackbodyColors = [
-      [4.569707133, 0.039821398, 0.000000000, -19.074439912],
-      [4.401270350, 0.089890833, 0.000000000, -17.980841789],
-      [4.235417248, 0.139192244, 0.000000000, -16.933362664],
-      [4.072711357, 0.187558117, 0.000000000, -15.930187884],
-      [3.913645371, 0.234841994, 0.000000000, -14.969565289],
-      [3.758641140, 0.280918475, 0.000000000, -14.049804203],
-      [3.608051138, 0.325682785, 0.000000000, -13.169274109],
-      [3.462161162, 0.369049968, 0.000000000, -12.326403125],
-      [3.321194012, 0.410953793, 0.000000000, -11.519676353],
-      [3.185313917, 0.451345444, 0.000000000, -10.747634171],
-      [3.054631464, 0.490192045, 0.000000000, -10.008870491],
-      [2.929208822, 0.527475118, 0.000000000, -9.302031036],
-      [2.809065090, 0.563188985, 0.000000000, -8.625811633],
-      [2.694181603, 0.597339193, 0.000000000, -7.978956545],
-      [2.582786799, 0.629521686, 0.009219064, -7.360256837],
-      [2.474729512, 0.659622993, 0.029226334, -6.768548789],
-      [2.371606151, 0.688035502, 0.051434086, -6.202712338],
-      [2.273315591, 0.714786738, 0.075867460, -5.661669549],
-      [2.179741770, 0.739910646, 0.102531933, -5.144383112],
-      [2.090756821, 0.763446678, 0.131413234, -4.649854862],
-      [2.006223852, 0.785438934, 0.162477607, -4.177124304],
-      [1.925999391, 0.805935378, 0.195672402, -3.725267151],
-      [1.849935510, 0.824987116, 0.230926944, -3.293393878],
-      [1.777881646, 0.842647751, 0.268153614, -2.880648273],
-      [1.709686140, 0.858972792, 0.307249115, -2.486206016],
-      [1.645197504, 0.874019140, 0.348095866, -2.109273269],
-      [1.584265449, 0.887844634, 0.390563483, -1.749085300],
-      [1.526741681, 0.900507653, 0.434510323, -1.404905153],
-      [1.472480505, 0.912066782, 0.479785070, -1.076022364],
-      [1.421339241, 0.922580525, 0.526228341, -0.761751751],
-      [1.373178502, 0.932107053, 0.573674322, -0.461432279],
-      [1.327862344, 0.940704001, 0.621952413, -0.174426021],
-      [1.285258326, 0.948428274, 0.670888899, 0.099882790],
-      [1.245237505, 0.955335883, 0.720308626, 0.362088597],
-      [1.207674394, 0.961481787, 0.770036700, 0.612765250],
-      [1.172446899, 0.966919738, 0.819900174, 0.852466636],
-      [1.139436263, 0.971702133, 0.869729714, 1.081727205],
-      [1.108527023, 0.975879858, 0.919361229, 1.301062410],
-      [1.079606998, 0.979502141, 0.968637407, 1.510969064],
-      [1.052567294, 0.982616403, 1.017409163, 1.711925637],
-      [1.027302354, 0.985268112, 1.065536919, 1.904392503],
-      [1.003710019, 0.987500653, 1.112891727, 2.088812149],
-      [0.981691620, 0.989355210, 1.159356174, 2.265609371],
-      [0.961152071, 0.990870665, 1.204825073, 2.435191467],
-      [0.941999972, 0.992083528, 1.249205913, 2.597948431],
-      [0.924147706, 0.993027882, 1.292419070, 2.754253176],
-      [0.907511514, 0.993735363, 1.334397791, 2.904461775],
-      [0.892011565, 0.994235166, 1.375087963, 3.048913744],
-      [0.877571988, 0.994554073, 1.414447677, 3.187932359],
-      [0.864120886, 0.994716516, 1.452446646, 3.321825005],
-      [0.851590320, 0.994744647, 1.489065462, 3.450883576],
-      [0.839916263, 0.994658445, 1.524294771, 3.575384895],
-      [0.829038530, 0.994475821, 1.558134366, 3.695591183],
-      [0.818900685, 0.994212745, 1.590592233, 3.811750544],
-      [0.809449923, 0.993883377, 1.621683593, 3.924097477],
-      [0.800636939, 0.993500202, 1.651429947, 4.032853411],
-      [0.792415781, 0.993074170, 1.679858149, 4.138227244],
-      [0.784743692, 0.992614829, 1.706999524, 4.240415898],
-      [0.777580950, 0.992130454, 1.732889045, 4.339604874],
-      [0.770890698, 0.991628182, 1.757564571, 4.435968804],
-      [0.764638772, 0.991114123, 1.781066155, 4.529671998],
-      [0.758793541, 0.990593478, 1.803435423, 4.620868985],
-      [0.753325736, 0.990070643, 1.824715028, 4.709705037],
-      [0.748208291, 0.989549300, 1.844948167, 4.796316682],
-    ].map(sample => new THREE.Vector4(...sample));
+      [4.569709, 0.039821, 0.000000], [4.230118, 0.140768, 0.000000],
+      [3.903519, 0.237852, 0.000000], [3.593724, 0.329942, 0.000000],
+      [3.303373, 0.416251, 0.000000], [3.034045, 0.496311, 0.000000],
+      [2.786420, 0.569920, 0.000000], [2.557951, 0.636468, 0.013547],
+      [2.345783, 0.695097, 0.057526], [2.153441, 0.746905, 0.110690],
+      [1.979881, 0.792212, 0.172956], [1.823917, 0.831410, 0.243916],
+      [1.684291, 0.864946, 0.322860], [1.559736, 0.893293, 0.408822],
+      [1.449007, 0.916941, 0.500625], [1.350905, 0.936379, 0.596942],
+      [1.264288, 0.952092, 0.696348], [1.188075, 0.964548, 0.797377],
+      [1.121241, 0.974198, 0.898585], [1.062819, 0.981468, 0.998602],
+      [1.011897, 0.986753, 1.096188], [0.967623, 0.990416, 1.190276],
+      [0.929203, 0.992779, 1.280003], [0.895908, 0.994124, 1.364719],
+      [0.867076, 0.994691, 1.443993], [0.842113, 0.994682, 1.517592],
+      [0.820489, 0.994259, 1.585458], [0.801741, 0.993551, 1.647675],
+      [0.785465, 0.992659, 1.704437], [0.771310, 0.991660, 1.756018],
+      [0.758978, 0.990609, 1.802741], [0.748210, 0.989548, 1.844959]
+    ].map(rgb => new THREE.Vector3(...rgb));
 
     const fwd   = CAM.clone().negate().normalize();
     const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), fwd).normalize();
@@ -170,54 +121,6 @@
       void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }
     `;
 
-    // One photographic response for the HDR output and non-HDR fallback.
-    // Grade after coverage averaging and tone mapping, before sRGB encoding;
-    // the disk's temperature, spectrum and relativistic transfer stay upstream.
-    const filmGrade = `
-      vec3 filmGrade(vec3 mapped, vec3 averagedHDR, float exposure) {
-        const vec3 Y = vec3(0.2126, 0.7152, 0.0722);
-        vec3 color = clamp(mapped, 0.0, 1.0);
-        vec3 hdr = max(averagedHDR, 0.0);
-        float y = dot(color, Y);
-        float yh = dot(hdr, Y);
-        if (y <= 0.0 || yh <= 0.0) return vec3(0.0);
-        float x = yh * exposure;
-        float warm = smoothstep(-0.08, 0.22, (hdr.r - hdr.b) /
-                               (hdr.r + hdr.g + hdr.b + 1e-6));
-        float shadows = 1.0 - smoothstep(0.04, 0.20, x);
-        float highlights = smoothstep(0.70, 2.40, x);
-        float midtones = max(1.0 - shadows - highlights, 0.0);
-        // Copper shadows, amber midtones, ivory highlights. Weights follow
-        // observed radiance, so all lensed images share the same response.
-        vec3 shadowColor = vec3(1.0, 0.24, 0.018);
-        vec3 midColor = vec3(1.0, 0.55, 0.14);
-        vec3 highColor = vec3(1.0, 0.985, 0.945);
-        shadowColor /= dot(shadowColor, Y);
-        midColor /= dot(midColor, Y);
-        highColor /= dot(highColor, Y);
-        vec3 palette = shadows * shadowColor + midtones * midColor + highlights * highColor;
-        palette /= dot(palette, Y);
-        float strength = smoothstep(0.002, 0.02, x) * 0.48 *
-                         mix(warm, 0.48, highlights);
-        vec3 unitColor = mix(color / y, palette, strength);
-        float saturation = 1.0 + 0.08 * midtones * warm;
-        unitColor = max(vec3(1.0) + saturation * (unitColor - vec3(1.0)), 0.0);
-        unitColor /= dot(unitColor, Y);
-        // Lift low midtones and retain a gold transition below the white peaks.
-        // This curve is monotone on [0,1], with G(0)=0,
-        // G(1)=1; it never raises a zero-radiance background into gray haze.
-        float toeMask = smoothstep(0.002, 0.03, y);
-        float shoulder = 1.0 - y;
-        float outputY = y + 1.45 * y * shoulder * shoulder * shoulder * shoulder * toeMask;
-        outputY -= 0.25 * y * y * shoulder * smoothstep(0.45, 0.85, y);
-        vec3 candidate = outputY * unitColor;
-        // Compress out-of-gamut colors toward neutral at the chosen luminance.
-        float maximum = max(candidate.r, max(candidate.g, candidate.b));
-        float keep = min(1.0, (1.0 - outputY) / max(maximum - outputY, 1e-8));
-        return vec3(outputY) + keep * (candidate - vec3(outputY));
-      }
-    `;
-
     const frag = `
       precision highp float;
 
@@ -229,19 +132,17 @@
       uniform vec3  uFwd;
       uniform float uFocal;
       uniform vec2  uCenter;
-      uniform vec4  uBlackbody[64];
+      uniform vec3  uBlackbody[32];
 
       #ifdef CACHE_RAYS
         layout(location = 1) out vec4 cachedHit1;
         layout(location = 2) out vec4 cachedBackdrop;
         layout(location = 3) out vec4 cachedOpacity1;
+        vec4 hitRecord0 = vec4(0.0);
+        vec4 hitRecord1 = vec4(0.0);
+        vec2 hitOpacity = vec2(0.0);
+        int hitCount = 0;
       #endif
-      // Collect geometry before shading so pixel derivatives never run inside
-      // the divergent geodesic loop. Cached and full paths shade the same records.
-      vec4 hitRecord0 = vec4(0.0);
-      vec4 hitRecord1 = vec4(0.0);
-      vec2 hitOpacity = vec2(0.0);
-      int hitCount = 0;
       #ifdef SHADE_CACHED_RAYS
         uniform highp sampler2D uHit0;
         uniform highp sampler2D uHit1;
@@ -410,136 +311,45 @@
         return c;
       }
 
-      // Periodic polar noise stretches local patches along the orbit. Wrap
-      // lattice corners, not the interpolated angle, to keep the seam smooth.
-      float diskValueNoise(vec2 p, float seed, float angularPeriod) {
-        vec2 cell = floor(p);
-        vec2 f = fract(p);
-        f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
-        float y0 = mod(cell.y, angularPeriod);
-        float y1 = mod(cell.y + 1.0, angularPeriod);
-        return mix(mix(hash13(vec3(cell.x, y0, seed)),
-                       hash13(vec3(cell.x + 1.0, y0, seed)), f.x),
-                   mix(hash13(vec3(cell.x, y1, seed)),
-                       hash13(vec3(cell.x + 1.0, y1, seed)), f.x), f.y);
+      float diskNoise(float r, float phi, float age, float frequency, int octaves) {
+        float a = phi - sqrt(0.5) * SIM_RATE / (r * sqrt(r)) * age;
+        vec3 q = vec3(cos(a) * 2.5, sin(a) * 2.5, r * frequency);
+        return fbm(q, octaves) * (octaves == 2 ? 1.1667 : 1.0);
       }
 
-      float diskFlowField(float r, float phi, float age, float epoch,
-                          vec2 footprint, float frequency, float angularPeriod,
-                          float stream, int octaves) {
-        const float TAU = 6.28318530718;
-        float omega = sqrt(0.5) * SIM_RATE / (r * sqrt(r));
-        float a = phi - omega * age;
-        float seed = hash13(vec3(epoch, stream, 7.31));
-        // Vary the spacing and tilt of emitting layers, with the same two-sine
-        // budget. Integer angular harmonics preserve the periodic seam.
-        float warp = 0.12 * sin(2.7 * r + seed * 17.3) +
-                     0.10 * sin(3.0 * a + seed * TAU);
-        vec2 q = vec2((r + warp) * frequency,
-                      a * angularPeriod / TAU + 0.35 * r);
-        q += fract(seed * vec2(173.31, 241.47)) * vec2(64.0, angularPeriod);
-        // Include retarded time, orbital shear and conservative warp bounds:
-        // radial slope <= 1+.12*2.7=1.324, angular slope <= .10*3=.30.
-        // The angular chart's radial tilt also contributes .35*radialWidth.
-        float angularWidth = footprint.y + 1.5 * omega * age * footprint.x / r;
-        float width = length(vec2((1.324 * footprint.x + 0.30 * angularWidth) * frequency,
-                                  angularWidth * angularPeriod / TAU + 0.35 * footprint.x));
-        float n = 0.5;
-        float amplitude = octaves == 1 ? 1.0 : 0.6666667;
-        for (int i = 0; i < 2; i++) {
-          if (i >= octaves) break;
-          float resolved = 1.0 - smoothstep(0.35, 0.85, width);
-          if (resolved > 0.0) {
-            n += amplitude * resolved * (diskValueNoise(q, seed * 91.9 + stream,
-                                                       angularPeriod) - 0.5);
-          }
-          // Integer doubling preserves the angular lattice's exact period.
-          q = q * 2.0 + vec2(11.7, 7.3);
-          angularPeriod *= 2.0;
-          width *= 2.0;
-          amplitude *= 0.5;
-        }
-        return n;
-      }
-
-      float diskFlow(float r, float phi, float emissionTime, vec2 footprint,
-                     float lifetime, float frequency, float angularPeriod,
-                     float stream, int octaves) {
-        float cycle = emissionTime / lifetime;
-        float epoch = floor(cycle);
-        float phase = fract(cycle);
-        float otherPhase = fract(phase + 0.5);
-        float otherEpoch = epoch + step(0.5, phase);
-        float blend = 0.5 - 0.5 * cos(phase * 6.2831853);
-        // Each stream changes its epoch seed only when both its weight and its
-        // weight derivative are zero. floor/fract also handle negative delays.
-        float first = diskFlowField(r, phi, phase * lifetime, epoch,
-            footprint, frequency, angularPeriod, stream, octaves);
-        float second = diskFlowField(r, phi, otherPhase * lifetime, otherEpoch,
-            footprint, frequency, angularPeriod, stream + 19.31, octaves);
-        return mix(second, first, blend);
-      }
-
-      float diskDissipation(float r, float phi, float emissionTime, vec2 footprint) {
-        // Noncommensurate lifetimes and new epoch seeds avoid a short global loop.
-        // Two coarse octaves and one fine octave still cost six 4-corner samples.
-        float coarse = diskFlow(r, phi, emissionTime, footprint, 31.0, 2.6, 24.0, 0.7, 2);
-        float fine = diskFlow(r, phi, emissionTime, footprint, 43.8406204, 6.4, 48.0, 8.3, 1);
-        float broad = coarse - 0.5;
-        float fibre = fine - 0.5;
-        // Sparse symmetric accents reveal short fibres between broader layers;
-        // they fade in plateaus instead of covering the whole disk in grain.
-        fibre *= smoothstep(0.06, 0.18, abs(fibre));
-        fibre *= 1.0 - smoothstep(0.24, 0.44, abs(broad));
-        float structure = 0.5 + 0.78 * broad + 0.22 * fibre;
-        // Shallower troughs reduce black blotches through the thermal source,
-        // not an extra colour/brightness multiplier. Unresolved heating is one.
-        // Unit ensemble mean is an approximation, not a per-ring constraint.
-        return mix(0.55, 1.45, smoothstep(0.23, 0.77, structure));
-      }
-
-      // Schwarzschild Page-Thorne zero-torque flux, normalized at 4.775464 Rs.
-      // q=sqrt(r/M); the ISCO expansion avoids cancellation in the log formula.
-      // Source: Page & Thorne 1974, https://doi.org/10.1086/152990
-      float ntFlux(float r) {
-        if (r <= R_IN) return 0.0;
-        float q = sqrt(2.0 * r);
-        float d = 2.0 * (r - R_IN) / (q + 2.449489743);
-        float integral;
-        if (d < 0.1) {
-          integral = d*d*(0.816496581 + d*(-0.777777778 +
-              d*(0.816496581 + d*(-0.911111111 +
-              d*(1.058421494 + d*(-1.264550265 + d*1.542271320))))));
-        } else {
-          integral = d - 0.866025404 *
-              log((q - 1.732050808) / (q + 1.732050808) * 5.828427125);
-        }
-        return max(8726.805104 * integral / (q*q*q*q*q*(q*q - 3.0)), 0.0);
-      }
-
-      vec3 blackbodyRadiance(float kelvin) {
-        // Below 1000 K the visible Y is <5.21e-9 of the 4500 K reference.
-        if (kelvin < 1000.0) return vec3(0.0);
-        float sampleIndex = clamp(log(kelvin / 1000.0) / log(20.0), 0.0, 1.0) * 63.0;
-        int i = min(int(floor(sampleIndex)), 62);
-        vec4 sampleValue = mix(uBlackbody[i], uBlackbody[i + 1], sampleIndex - float(i));
-        return sampleValue.rgb * exp(sampleValue.a);
+      vec3 blackbodyColor(float kelvin) {
+        float sampleIndex = clamp(log(max(kelvin, 1000.0) / 1000.0) / log(20.0), 0.0, 1.0) * 31.0;
+        int i = min(int(floor(sampleIndex)), 30);
+        return mix(uBlackbody[i], uBlackbody[i + 1], sampleIndex - float(i));
       }
 
       // Shared by the full trace and cached path; keep arithmetic/time sampling
       // identical so both paths produce the same animated emission.
-      vec3 diskEmission(float r, float phi, float travelTime, float shift, vec2 footprint) {
+      vec3 diskEmission(float r, float phi, float travelTime, float shift) {
+        float resolution = min(uRes.x, uRes.y);
+        float frequency = mix(3.0, 6.0, smoothstep(400.0, 1000.0, resolution));
+        int octaves = resolution < 700.0 ? 2 : 3;
+        // Two staggered flow lifetimes keep differential shear from winding the
+        // texture into sub-pixel noise over time. Each resets at zero weight.
         float emissionTime = uTime - travelTime / SIM_RATE;
-        float heating = diskDissipation(r, phi, emissionTime, footprint);
-        float localFlux = ntFlux(r) * heating;
-        // The fixed gray optical depth contributes a constant hemispheric factor
-        // absorbed into this uncalibrated temperature scale. Heating changes T,
-        // not an independent intensity multiplier: the source function is Bnu(T).
-        float temperature = 5200.0 * pow(localFlux, 0.25);
-        // g^3 Bnu(nu/g,T)=Bnu(nu,gT). The CIE-visible spectrum already includes
-        // the frequency shift; do not multiply by another flux, heating or g^4.
-        // Normalize the display gain to the LUT's Y at the 5200 K peak scale.
-        return (0.85 / 2.167645742) * blackbodyRadiance(temperature * shift);
+        float age = mod(emissionTime, 48.0);
+        float otherAge = mod(emissionTime + 24.0, 48.0);
+        float blend = 0.5 - 0.5 * cos(age * 6.2831853 / 48.0);
+        float n = mix(diskNoise(r, phi, otherAge, frequency, octaves),
+                      diskNoise(r, phi, age, frequency, octaves), blend);
+        float density = mix(0.18, 1.45, smoothstep(0.20, 0.72, n));
+
+        // Zero-torque thin-disk radial flux peaks outside the inner boundary.
+        float x = r / R_IN;
+        float flux = pow(x, -3.0) * max(1.0 - inversesqrt(x), 0.0) / 0.05665;
+        float temperature = pow(flux, 0.25);
+
+        // Tobs = g Tem. The 4500 K peak is a display temperature scale, not a
+        // calibrated disk temperature. Unit-luminance chromaticity avoids counting
+        // intensity twice: only the bolometric flux below receives the g^4 factor.
+        vec3 col = blackbodyColor(4500.0 * temperature * shift);
+        float emission = 0.85 * flux * density * pow(shift, 4.0);
+        return col * emission;
       }
 
       // A gray emitting slab of finite optical depth, not an opaque SS disk.
@@ -564,53 +374,31 @@
         // Aberration into the gas frame (its boost is parallel to the disk).
         float muComoving = clamp(dop * abs(nv.y), 0.0, 1.0);
         float opacity = edge * (1.0 - exp(-1.8 / max(muComoving, 0.001)));
-        // Continuous orbits cross r >= 3 Rs at most twice. Preserve numerical
-        // exceptions in the full path; the cache flags them for frame fallback.
-        if (hitCount == 0) {
-          hitRecord0 = vec4(r, phi, travelTime, shift);
-          hitOpacity.x = opacity;
-        } else if (hitCount == 1) {
-          hitRecord1 = vec4(r, phi, travelTime, shift);
-          hitOpacity.y = opacity;
-        } else {
-          #ifdef CACHE_RAYS
+        #ifdef CACHE_RAYS
+          // Preserve float32 intermediates and the original opacity/early exits.
+          // Continuous orbits cross r >= 3 Rs at most twice. Flag any numerical
+          // exception so the entire frame can use the original shader instead.
+          if (hitCount == 0) {
+            hitRecord0 = vec4(r, phi, travelTime, shift);
+            hitOpacity.x = opacity;
+          } else if (hitCount == 1) {
+            hitRecord1 = vec4(r, phi, travelTime, shift);
+            hitOpacity.y = opacity;
+          } else {
             hitRecord0.x = -1.0;
-          #else
-            // Derivative-free conservative filtering for this exceptional hit.
-            return vec4(diskEmission(r, phi, travelTime, shift, vec2(0.15, 0.04)), opacity);
-          #endif
-        }
-        hitCount++;
-        return vec4(0.0, 0.0, 0.0, opacity);
+          }
+          hitCount++;
+          return vec4(0.0, 0.0, 0.0, opacity);
+        #else
+        return vec4(diskEmission(r, phi, travelTime, shift), opacity);
+        #endif
       }
 
-      vec4 shadeHit(vec4 record, float opacity, vec2 footprint) {
+      #ifdef SHADE_CACHED_RAYS
+      vec4 shadeHit(vec4 record, float opacity) {
         if (record.x == 0.0) return vec4(0.0);
-        return vec4(diskEmission(record.x, record.y, record.z, record.w, footprint), opacity);
+        return vec4(diskEmission(record.x, record.y, record.z, record.w), opacity);
       }
-
-      // Differentiate the circular chart, not atan's discontinuous phi value.
-      // Propagation-delay gradients also change the retarded orbital phase.
-      vec2 diskFootprint(vec4 record) {
-        float radialWidth = abs(dFdx(record.x)) + abs(dFdy(record.x));
-        vec2 angular = vec2(cos(record.y), sin(record.y));
-        float angularWidth = length(dFdx(angular)) + length(dFdy(angular));
-        float omega = sqrt(0.5) / pow(max(record.x, R_IN), 1.5);
-        angularWidth += omega * (abs(dFdx(record.z)) + abs(dFdy(record.z)));
-        return vec2(radialWidth, angularWidth);
-      }
-
-      vec3 shadeRecords(vec4 first, vec4 second, vec2 opacity) {
-        // Execute both derivatives before any hit-dependent branch.
-        vec2 footprint0 = diskFootprint(first);
-        vec2 footprint1 = diskFootprint(second);
-        vec4 disk0 = shadeHit(first, opacity.x, footprint0);
-        vec4 disk1 = shadeHit(second, opacity.y, footprint1);
-        return disk0.rgb * disk0.a + (1.0 - disk0.a) * disk1.rgb * disk1.a;
-      }
-
-      #ifdef DIRECT_OUTPUT
-        ${filmGrade}
       #endif
 
       void main() {
@@ -627,10 +415,14 @@
           ivec2 pixel = ivec2(gl_FragCoord.xy);
           vec4 firstHit = texelFetch(uHit0, pixel, 0);
           vec4 backdrop = texelFetch(uBackdrop, pixel, 0);
-          vec4 secondHit = texelFetch(uHit1, pixel, 0);
-          vec2 opacity = vec2(backdrop.a, texelFetch(uOpacity1, pixel, 0).r);
-          vec3 col = shadeRecords(firstHit, secondHit, opacity);
-          float transmission = (1.0 - opacity.x) * (1.0 - opacity.y);
+          vec4 disk = shadeHit(firstHit, backdrop.a);
+          vec3 col = vec3(0.0);
+          float transmission = 1.0;
+          col += transmission * disk.rgb * disk.a;
+          transmission *= 1.0 - disk.a;
+          disk = shadeHit(texelFetch(uHit1, pixel, 0), texelFetch(uOpacity1, pixel, 0).r);
+          col += transmission * disk.rgb * disk.a;
+          transmission *= 1.0 - disk.a;
           col += transmission * backdrop.rgb;
           col *= clamp(1.0 - 0.30 * pow(length(pn * vec2(0.86, 1.0)), 2.4), 0.0, 1.0);
           gl_FragColor = vec4(max(col, 0.0), 1.0);
@@ -716,25 +508,21 @@
           cachedBackdrop = vec4(background, hitOpacity.x);
           cachedOpacity1 = vec4(hitOpacity.y, 0.0, 0.0, 0.0);
         #else
-        col += shadeRecords(hitRecord0, hitRecord1, hitOpacity);
         col *= clamp(1.0 - 0.30 * pow(length(pn * vec2(0.86, 1.0)), 2.4), 0.0, 1.0);
 
         gl_FragColor = vec4(max(col, 0.0), 1.0);
         #endif
         #endif
         #ifdef DIRECT_OUTPUT
-          vec3 gradeHDR = gl_FragColor.rgb;
           #include <tonemapping_fragment>
-          gl_FragColor.rgb = filmGrade(gl_FragColor.rgb, gradeHDR, toneMappingExposure);
           #include <colorspace_fragment>
         #endif
       }
     `;
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-    // A filmic highlight shoulder keeps warm midtones and a near-white bright side.
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.78;
+    renderer.toneMappingExposure = 1.0;
     const supportsFloatColor = renderer.extensions.has('EXT_color_buffer_float');
     const supportsHDR = supportsFloatColor || renderer.extensions.has('EXT_color_buffer_half_float');
 
@@ -751,27 +539,11 @@
     // Without float color attachments, draw to the canvas with the same output
     // transform. Skip HDR bloom rather than allocating incomplete render targets.
     const composer = supportsHDR ? new EffectComposer(renderer) : null;
-    const bloom = supportsHDR ? new UnrealBloomPass(new THREE.Vector2(1, 1), 0.09, 0.12, 2.00) : null;
+    const bloom = supportsHDR ? new UnrealBloomPass(new THREE.Vector2(1, 1), 0.14, 0.15, 1.40) : null;
     if (composer) {
       composer.addPass(new RenderPass(scene, camera));
       composer.addPass(bloom);
-      const outputPass = new OutputPass();
-      const outputFragment = outputPass.material.fragmentShader;
-      const outputAnchors = ['void main()', 'gl_FragColor = texture2D( tDiffuse, vUv );', '// color space'];
-      // Extend only the pinned OutputPass instance, without a new pass/target.
-      // If its layout changes, keep a working ordinary tone-mapped output.
-      if (outputAnchors.every(anchor => outputFragment.split(anchor).length === 2)) {
-        outputPass.material.fragmentShader = outputFragment
-          .replace('void main()', filmGrade + '\nvoid main()')
-          .replace('gl_FragColor = texture2D( tDiffuse, vUv );',
-                   'gl_FragColor = texture2D( tDiffuse, vUv );\nvec3 gradeHDR = gl_FragColor.rgb;')
-          .replace('// color space',
-                   'gl_FragColor.rgb = filmGrade(gl_FragColor.rgb, gradeHDR, toneMappingExposure);\n// color space');
-        outputPass.material.needsUpdate = true;
-      } else {
-        console.warn('OutputPass layout changed; using its standard display transform.');
-      }
-      composer.addPass(outputPass);
+      composer.addPass(new OutputPass());
       // Full-screen color passes never consume depth; avoid unused GPU storage.
       for (const target of [
         composer.renderTarget1, composer.renderTarget2, bloom.renderTargetBright,
@@ -840,7 +612,6 @@
           rayCache.dispose();
           rayCache = null;
           screenMesh.material = material;
-          if (coverageSamples > 1) { allowCoverage = false; resize(); }
         }
       }
       if (composer) composer.render();
@@ -848,14 +619,12 @@
     }
 
     let quality = 1;   // keep a lower resolution only when it improves frame time
-    let allowCoverage = true, lastCoverage = true, coverageSamples = 1;
     let lastW = 0, lastH = 0, lastDpr = 0;
     let lastDisplayDpr = 0;
     let frameId = 0, contextLost = false;
     let elapsed = 0, last = performance.now();
     let sampled = 0, sampleAcc = 0, stepDowns = 0;
     let trialFrameTime = 0, qualityBeforeTrial = 1, qualityLocked = false;
-    let coverageBeforeTrial = true;
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
     function requestFrame() {
@@ -879,7 +648,7 @@
       if (w !== lastW || h !== lastH || displayDpr !== lastDisplayDpr) {
         // A different viewport invalidates the timing comparison, and may need
         // much less GPU work. Start its quality evaluation at full resolution.
-        quality = 1; allowCoverage = true; stepDowns = 0; qualityLocked = false;
+        quality = 1; stepDowns = 0; qualityLocked = false;
         trialFrameTime = 0; sampled = 0; sampleAcc = 0;
         lastDisplayDpr = displayDpr;
       }
@@ -889,29 +658,15 @@
 
       // Reallocating the composer targets is not free, and ResizeObserver also
       // fires once on observe.
-      if (w === lastW && h === lastH && dpr === lastDpr && allowCoverage === lastCoverage) return;
-      lastW = w; lastH = h; lastDpr = dpr; lastCoverage = allowCoverage;
+      if (w === lastW && h === lastH && dpr === lastDpr) return;
+      lastW = w; lastH = h; lastDpr = dpr;
 
       // Use integer buffer sizes at pixel ratio 1, including in a collapsed view.
-      const outputW = Math.min(MAX_PIXELS, Math.max(1, Math.floor(w * dpr)));
-      const outputH = Math.min(Math.floor(MAX_PIXELS / outputW), Math.max(1, Math.floor(h * dpr)));
-      const baseW = Math.max(1, Math.floor(w * baseDpr));
-      const baseH = Math.max(1, Math.floor(h * baseDpr));
-      const viewportLimit = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
-      const targetLimit = Math.min(renderer.capabilities.maxTextureSize,
-          gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), viewportLimit[0], viewportLimit[1]);
-      // Four-ray coverage only when it fits alongside the native output. Choose
-      // from the base quality so adaptive step-downs always reduce GPU work.
-      const samples = supportsFloatColor && rayCache && allowCoverage && baseW * baseH * 4 <= MAX_PIXELS &&
-          Math.max(baseW, baseH) * 2 <= targetLimit ? 2 : 1;
-      coverageSamples = samples;
-      const renderW = outputW * samples;
-      const renderH = outputH * samples;
-      renderer.setSize(outputW, outputH, false);
+      const renderW = Math.min(MAX_PIXELS, Math.max(1, Math.floor(w * dpr)));
+      const renderH = Math.min(Math.floor(MAX_PIXELS / renderW), Math.max(1, Math.floor(h * dpr)));
+      renderer.setSize(renderW, renderH, false);
       composer?.setSize(renderW, renderH);
       uniforms.uRes.value.set(renderW, renderH);
-      // OutputPass linearly averages the 2x2 HDR coverage samples before its
-      // tone mapping and sRGB conversion; all composer targets use LinearFilter.
 
       // Leave room for the outer disk, including in a portrait viewport.
       const aspect = w / h;
@@ -939,7 +694,7 @@
       canvas.classList.add('ready');
       if (reducedMotion.matches) return;
 
-      // Trial less coverage first, then lower resolution below ~45 fps. A frame
+      // Trial a lower resolution below ~45 fps. A 30 Hz display or browser frame
       // cap is not GPU overload: if the trial does not improve timing by 10%,
       // restore its previous quality and stop probing until the viewport changes.
       if (cacheWarmupFrames > 0) {
@@ -953,7 +708,6 @@
           if (trialFrameTime > 0) {
             if (average > trialFrameTime * 0.9) {
               quality = qualityBeforeTrial;
-              allowCoverage = coverageBeforeTrial;
               qualityLocked = true;
               resize();
             }
@@ -962,9 +716,8 @@
           if (!qualityLocked && average > 0.022 && stepDowns < 3) {
             trialFrameTime = average;
             qualityBeforeTrial = quality;
-            coverageBeforeTrial = allowCoverage;
-            if (coverageSamples > 1) allowCoverage = false;
-            else { stepDowns++; quality *= 0.8; }
+            stepDowns++;
+            quality *= 0.8;
             resize();
           }
         }
