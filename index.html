@@ -321,55 +321,131 @@
         return cos(angle) * radial + sin(angle) * tangent;
       }
 
-      // Filter radiance over the lensed pixel footprint. Its angular area already
-      // accounts for resolved lens magnification; do not multiply radiance by it.
+      void skyFace(int face, out vec3 normal, out vec3 axisU, out vec3 axisV) {
+        if (face == 0) {
+          normal = vec3(1, 0, 0); axisU = vec3(0, 0, -1); axisV = vec3(0, 1, 0);
+        } else if (face == 1) {
+          normal = vec3(-1, 0, 0); axisU = vec3(0, 0, 1); axisV = vec3(0, 1, 0);
+        } else if (face == 2) {
+          normal = vec3(0, 1, 0); axisU = vec3(1, 0, 0); axisV = vec3(0, 0, -1);
+        } else if (face == 3) {
+          normal = vec3(0, -1, 0); axisU = vec3(1, 0, 0); axisV = vec3(0, 0, 1);
+        } else if (face == 4) {
+          normal = vec3(0, 0, 1); axisU = vec3(1, 0, 0); axisV = vec3(0, 1, 0);
+        } else {
+          normal = vec3(0, 0, -1); axisU = vec3(-1, 0, 0); axisV = vec3(0, 1, 0);
+        }
+      }
+
+      // Filter in an orthonormal angular frame, independent of the source chart.
+      // Radiance already includes resolved lens magnification through this footprint.
       vec3 starLayer(vec3 d, vec3 ddx, vec3 ddy, float scale, float threshold) {
         const float PI = 3.14159265359;
         const float BASE_VAR = 0.0064;
-        vec2 grid = floor(vec2(2.0 * PI, PI) * scale + 0.5);
+        const float FILTER_VAR = 0.36; // >= 0.6 render pixels prevents subpixel flicker
+        const float SUPPORT = 4.0;     // retain 99.96% of the Gaussian's energy
+        const int MAX_RADIUS = 6;
+        const int SEARCH_RADIUS = MAX_RADIUS + 1; // complete support during the fade
+        // Coarse population cells let a small search retain sparse bright stars
+        // across footprints much wider than the original fine angular grid.
+        float grid = floor(2.0 * scale / 8.0 + 0.5);
+        float cellWidth = 2.0 * scale / grid;
+        float probability = (1.0 - threshold) * cellWidth * cellWidth;
         vec3 meanLight = vec3(0.88, 0.855, 0.86) *
             ((1.0 - threshold) * 2.0 * PI * BASE_VAR * (0.12 + 2.8 / 9.0));
-        float horizontal2 = dot(d.xz, d.xz);
-        if (horizontal2 <= 1e-6) return meanLight;
-        float polarBlend = 1.0 - smoothstep(1e-6, 1e-4, horizontal2);
-        vec2 uv = vec2(atan(d.z, d.x) / (2.0 * PI) + 0.5,
-                       asin(clamp(d.y, -1.0, 1.0)) / PI + 0.5) * grid;
-
-        // Differentiate the direction before its angular chart: atan has a seam.
-        vec2 dx = vec2((d.x * ddx.z - d.z * ddx.x) / horizontal2,
-                       ddx.y / sqrt(horizontal2)) * grid / vec2(2.0 * PI, PI);
-        vec2 dy = vec2((d.x * ddy.z - d.z * ddy.x) / horizontal2,
-                       ddy.y / sqrt(horizontal2)) * grid / vec2(2.0 * PI, PI);
+        vec3 axis = abs(d.y) < 0.9 ? vec3(0, 1, 0) : vec3(0, 0, 1);
+        vec3 tangentU = normalize(cross(axis, d));
+        vec3 tangentV = cross(d, tangentU);
+        vec2 dx = scale * vec2(dot(ddx, tangentU), dot(ddx, tangentV));
+        vec2 dy = scale * vec2(dot(ddy, tangentU), dot(ddy, tangentV));
         float jxx = dx.x * dx.x + dy.x * dy.x;
         float jyy = dx.y * dx.y + dy.y * dy.y;
         float jxy = dx.x * dx.y + dy.x * dy.y;
-        float largest = 0.5 * (jxx + jyy +
-            sqrt((jxx - jyy) * (jxx - jyy) + 4.0 * jxy * jxy));
-        // A bounded 3x3 filter cannot resolve very large footprints. Fade to the
-        // population mean instead of truncating their energy or producing flashes.
-        float meanBlend = max(polarBlend, smoothstep(0.9, 1.5, sqrt(largest)));
+        float cxx = BASE_VAR + FILTER_VAR * jxx;
+        float cyy = BASE_VAR + FILTER_VAR * jyy;
+        float cxy = FILTER_VAR * jxy;
+        float sigma = sqrt(0.5 * (cxx + cyy +
+            sqrt((cxx - cyy) * (cxx - cyy) + 4.0 * cxy * cxy)));
+        float angularSupport = SUPPORT * sigma / scale;
+        // At this width even the primary face exceeds SEARCH_RADIUS. This also
+        // keeps every possible source face in the forward hemisphere below.
+        if (angularSupport >= 0.5) return meanLight;
+        float supportCosine = sqrt(max(0.0, 1.0 - angularSupport * angularSupport));
+        vec2 facePixels[6];
+        vec2 faceExtents[6];
+        float meanBlend = 0.0;
+
+        // Size the budget from the actual projected support of each nearby face.
+        for (int face = 0; face < 6; face++) {
+          faceExtents[face] = vec2(-1.0);
+          vec3 normal, axisU, axisV;
+          skyFace(face, normal, axisU, axisV);
+          float facing = dot(d, normal);
+          if (facing <= 0.02) continue;
+          vec2 uv = vec2(dot(d, axisU), dot(d, axisV)) / facing;
+          vec2 pixel = (uv * 0.5 + 0.5) * grid;
+          // Projection is nonlinear across the kernel. Bound its denominator
+          // using both the angular support and the source face's minimum cosine.
+          float sourceFacing = max(0.57735026919,
+              facing * supportCosine - sqrt(max(0.0, 1.0 - facing * facing)) * angularSupport);
+          vec3 gradientU = (axisU - uv.x * normal) / (sourceFacing * cellWidth);
+          vec3 gradientV = (axisV - uv.y * normal) / (sourceFacing * cellWidth);
+          vec2 a = vec2(dot(gradientU, tangentU), dot(gradientU, tangentV));
+          vec2 b = vec2(dot(gradientV, tangentU), dot(gradientV, tangentV));
+          vec2 extent = SUPPORT * sqrt(max(vec2(
+              cxx * a.x * a.x + 2.0 * cxy * a.x * a.y + cyy * a.y * a.y,
+              cxx * b.x * b.x + 2.0 * cxy * b.x * b.y + cyy * b.y * b.y), vec2(0.0))) + vec2(1e-4);
+          // Anticipate an entering face so its budget cannot change abruptly at
+          // the box boundary. Every intersecting face has full relevance.
+          float outside = max(max(-pixel.x, pixel.x - grid) / extent.x,
+                              max(-pixel.y, pixel.y - grid) / extent.y);
+          float relevance = 1.0 - smoothstep(1.0, 1.1, outside);
+          meanBlend = max(meanBlend, relevance * smoothstep(float(MAX_RADIUS),
+              float(SEARCH_RADIUS), max(extent.x, extent.y)));
+          if (outside > 1.0) continue;
+          facePixels[face] = pixel;
+          faceExtents[face] = extent;
+        }
         if (meanBlend >= 1.0) return meanLight;
-        float cxx = BASE_VAR + jxx / 12.0;
-        float cyy = BASE_VAR + jyy / 12.0;
-        float cxy = jxy / 12.0;
         float determinant = max(cxx * cyy - cxy * cxy, BASE_VAR * BASE_VAR);
         float normalization = BASE_VAR / sqrt(determinant);
-        vec2 cell = floor(uv);
         vec3 light = vec3(0.0);
-        for (int y = -1; y <= 1; y++) {
-          for (int x = -1; x <= 1; x++) {
-            vec2 sourceCell = cell + vec2(float(x), float(y));
-            if (sourceCell.y < 0.0 || sourceCell.y >= grid.y) continue;
-            vec2 id = vec2(mod(sourceCell.x, grid.x), sourceCell.y);
-            if (hash13(vec3(id, scale)) < threshold) continue;
-            vec2 seed = vec2(hash13(vec3(id, 2.7)), hash13(vec3(id, 9.1)));
-            vec2 delta = uv - sourceCell - mix(vec2(0.2), vec2(0.8), seed);
-            float q = (cyy * delta.x * delta.x - 2.0 * cxy * delta.x * delta.y +
-                       cxx * delta.y * delta.y) / determinant;
-            float energy = exp(-0.5 * max(q, 0.0)) * normalization;
-            float magnitude = 0.12 + 2.8 * pow(hash13(vec3(id, 19.3)), 8.0);
-            vec3 tint = mix(vec3(0.76, 0.84, 1.0), vec3(1.0, 0.87, 0.72), seed.x);
-            light += tint * energy * magnitude;
+
+        // Query adjacent faces as well as the face containing d: stars and their
+        // kernels cross cube edges, but every source cell belongs to exactly one face.
+        for (int face = 0; face < 6; face++) {
+          vec2 extent = faceExtents[face];
+          if (extent.x < 0.0) continue;
+          vec2 pixel = facePixels[face];
+          vec3 normal, axisU, axisV;
+          skyFace(face, normal, axisU, axisV);
+          ivec2 radius = min(ivec2(ceil(extent)), ivec2(SEARCH_RADIUS));
+          vec2 cell = floor(pixel);
+          float salt = scale + 37.0 * float(face);
+          for (int y = -radius.y; y <= radius.y; y++) {
+            for (int x = -radius.x; x <= radius.x; x++) {
+              vec2 sourceCell = cell + vec2(float(x), float(y));
+              if (any(lessThan(sourceCell, vec2(0.0))) || any(greaterThanEqual(sourceCell, vec2(grid)))) continue;
+              float roll = hash13(vec3(sourceCell, salt));
+              if (roll >= probability) continue;
+              vec2 seed = vec2(hash13(vec3(sourceCell, salt + 5.3)), hash13(vec3(sourceCell, salt + 11.7)));
+              vec2 sourceUV = 2.0 * (sourceCell + seed) / grid - 1.0;
+              float inverseRadius = inversesqrt(1.0 + dot(sourceUV, sourceUV));
+              // Cube cells subtend different solid angles. Rejection at the
+              // random source position gives constant expected density per steradian.
+              if (roll >= probability * inverseRadius * inverseRadius * inverseRadius) continue;
+              vec3 source = (normal + sourceUV.x * axisU + sourceUV.y * axisV) * inverseRadius;
+              if (dot(source, d) <= 0.0) continue;
+              vec3 offset = source - d;
+              vec2 delta = scale * vec2(dot(offset, tangentU), dot(offset, tangentV));
+              float q = (cyy * delta.x * delta.x - 2.0 * cxy * delta.x * delta.y +
+                         cxx * delta.y * delta.y) / determinant;
+              if (q > SUPPORT * SUPPORT) continue;
+              float energy = exp(-0.5 * max(q, 0.0)) * normalization;
+              float magnitude = 0.12 + 2.8 * pow(hash13(vec3(sourceCell, salt + 19.3)), 8.0);
+              vec3 tint = mix(vec3(0.76, 0.84, 1.0), vec3(1.0, 0.87, 0.72), seed.x);
+              light += tint * energy * magnitude;
+            }
           }
         }
         return mix(light, meanLight, meanBlend);
