@@ -36,9 +36,52 @@
       height: 100%;
       opacity: 0;
       transition: opacity 1.2s ease;
+      touch-action: none;
+      cursor: grab;
     }
 
     #sky.ready { opacity: 1; }
+    #sky.dragging { cursor: grabbing; }
+    #sky:focus-visible { outline: 2px solid #e6b78e; outline-offset: -4px; }
+
+    #view-controls {
+      position: fixed;
+      bottom: max(20px, env(safe-area-inset-bottom));
+      left: 50%;
+      transform: translateX(-50%);
+      width: max-content;
+      max-width: calc(100% - 24px);
+      padding: 8px 14px 10px;
+      border: 1px solid #ffffff24;
+      border-radius: 18px;
+      background: #09090dd9;
+      color: #e7ddd4;
+      font: 12px/1.5 system-ui, sans-serif;
+      text-align: center;
+    }
+
+    #view-controls[hidden] { display: none; }
+    .view-buttons { display: flex; justify-content: center; gap: 6px; }
+    .view-buttons button {
+      min-width: 44px;
+      min-height: 44px;
+      border: 1px solid #ffffff20;
+      border-radius: 10px;
+      background: #ffffff08;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+    }
+    .view-buttons button:hover { background: #ffffff18; }
+    .view-buttons button:focus-visible { outline: 2px solid #e6b78e; outline-offset: 2px; }
+    .view-buttons button:disabled { opacity: 0.35; cursor: default; }
+    #zoom-in, #zoom-out { font-size: 22px; }
+    #reset-view { padding: 0 14px; }
+    #view-hint { margin: 6px 0 0; color: #c0b6ad; }
+
+    @media (max-width: 480px) {
+      #view-controls { bottom: max(12px, env(safe-area-inset-bottom)); }
+    }
 
     @media (prefers-reduced-motion: reduce) {
       #sky { transition: none; }
@@ -46,7 +89,15 @@
   </style>
 </head>
 <body>
-  <canvas id="sky" aria-hidden="true"></canvas>
+  <canvas id="sky" tabindex="0" role="img" aria-label="Interactive black hole" aria-describedby="view-hint"></canvas>
+  <div id="view-controls" role="group" aria-label="Black hole view controls" hidden>
+    <div class="view-buttons">
+      <button id="zoom-out" type="button" aria-label="Zoom out" title="Zoom out (−)">−</button>
+      <button id="reset-view" type="button" title="Reset view (Home)">Reset view</button>
+      <button id="zoom-in" type="button" aria-label="Zoom in" title="Zoom in (+)">+</button>
+    </div>
+    <p id="view-hint">Drag to orbit · Scroll or pinch to zoom<br>Arrow keys rotate · + / − zoom · Home resets</p>
+  </div>
 
   <script type="importmap">
   {
@@ -59,12 +110,17 @@
 
   <script type="module">
     import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
     import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
     import { OutputPass }      from 'three/addons/postprocessing/OutputPass.js';
 
     const canvas = document.getElementById('sky');
+    const viewControls = document.getElementById('view-controls');
+    const zoomIn = document.getElementById('zoom-in');
+    const zoomOut = document.getElementById('zoom-out');
+    const resetView = document.getElementById('reset-view');
 
     // A slightly elevated view separates the near disk from its lensed image.
     // Schwarzschild geometry; blackbody chromaticity with bolometric brightness.
@@ -73,6 +129,24 @@
     const CAM = new THREE.Vector3(0, DIST * Math.sin(INCL), -DIST * Math.cos(INCL));
     const FOCAL = 1.3;                 // half-height coordinates: fovY ~ 42 deg
     const MAX_PIXELS = 2.4e6;          // bound the ray integration and bloom cost
+    const PREVIEW_PIXELS = 120000;     // retrace moving views without full-size readbacks
+
+    // This camera stores the orbit and optical zoom only. The full-screen render
+    // camera below stays fixed; the ray shader receives the actual view basis.
+    const viewCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+    viewCamera.position.copy(CAM);
+    const controls = new OrbitControls(viewCamera, canvas);
+    controls.enablePan = false;
+    controls.minZoom = 0.6;
+    controls.maxZoom = 2.5;
+    // Stay above the infinitesimally thin disk and away from the polar singularity.
+    controls.minPolarAngle = THREE.MathUtils.degToRad(5);
+    controls.maxPolarAngle = THREE.MathUtils.degToRad(89);
+    controls.rotateSpeed = 0.65;
+    controls.zoomSpeed = 0.8;
+    controls.touches.TWO = THREE.TOUCH.DOLLY_ROTATE;
+    controls.update();
+    controls.saveState();
 
     // Planck spectra integrated against CIE 1931 2-degree CMFs, then converted
     // to linear sRGB, gamut-clipped and normalized to luminance 1. Log-spaced
@@ -551,8 +625,8 @@
       ]) target.depthBuffer = false;
     }
 
-    // The camera, trajectories, opacity and stars are static. Cache their exact
-    // per-pixel float32 values; only disk emission needs evaluating every frame.
+    // Between view changes, trajectories, opacity and stars are static. Cache
+    // their exact float32 values; only disk emission changes every frame.
     // Three RGBA32F targets + one R32F target cost 52 bytes per render pixel.
     // Unsupported/incomplete float targets use the original shader at full quality.
     const gl = renderer.getContext();
@@ -581,7 +655,9 @@
     }
 
     function renderScene() {
-      if (rayCache && cacheDirty) {
+      if (interacting) screenMesh.material = material;
+      else if (rayCache && !cacheDirty) screenMesh.material = cachedMaterial;
+      if (rayCache && cacheDirty && !interacting) {
         // Frame intervals include the previous draw. Exclude this one-off build
         // and its following interval from steady-state quality measurements.
         cacheWarmupFrames = 2;
@@ -625,7 +701,122 @@
     let elapsed = 0, last = performance.now();
     let sampled = 0, sampleAcc = 0, stepDowns = 0;
     let trialFrameTime = 0, qualityBeforeTrial = 1, qualityLocked = false;
+    let baseFocal = FOCAL;
+    let interacting = false, controlsActive = false, settleTimer = 0;
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const viewPosition = new THREE.Vector3();
+    const activePointers = new Map();
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+    canvas.addEventListener('pointerdown', event => {
+      activePointers.set(event.pointerId, event.pointerType);
+    }, { capture: true });
+    document.addEventListener('pointerup', event => activePointers.delete(event.pointerId), { capture: true });
+    canvas.addEventListener('pointercancel', event => activePointers.delete(event.pointerId), { capture: true });
+    canvas.addEventListener('lostpointercapture', event => {
+      if (activePointers.has(event.pointerId)) cancelPointer(event.pointerId, event.pointerType);
+    });
+    // A physical modifier key reserves wheel zoom for the browser. Trackpad
+    // pinch synthesizes ctrl+wheel without a key press and still zooms the scene.
+    function updateZoomModifier(event) {
+      controls.enableZoom = !(event.ctrlKey || event.metaKey);
+    }
+    document.addEventListener('keydown', updateZoomModifier, { capture: true });
+    document.addEventListener('keyup', updateZoomModifier, { capture: true });
+
+    function cancelPointer(pointerId, pointerType) {
+      canvas.dispatchEvent(new PointerEvent('pointercancel', { pointerId, pointerType, bubbles: true }));
+    }
+
+    function cancelInteraction() {
+      for (const [pointerId, pointerType] of activePointers) cancelPointer(pointerId, pointerType);
+      controlsActive = false;
+      interacting = false;
+      clearTimeout(settleTimer);
+      canvas.classList.remove('dragging');
+    }
+
+    function beginInteraction() {
+      clearTimeout(settleTimer);
+      if (interacting) return;
+      interacting = true;
+      // Do not compare preview timings with the normal-resolution quality trial.
+      // An interrupted trial has not proved that its quality reduction helps.
+      if (trialFrameTime > 0) {
+        quality = qualityBeforeTrial;
+        stepDowns = Math.max(0, stepDowns - 1);
+      }
+      sampled = 0; sampleAcc = 0; trialFrameTime = 0;
+      resize();
+    }
+
+    function settleInteraction() {
+      clearTimeout(settleTimer);
+      if (!interacting) return;
+      settleTimer = setTimeout(() => {
+        if (controlsActive) return;
+        interacting = false;
+        cacheDirty = true;
+        cacheWarmupFrames = 2;
+        last = performance.now();
+        resize();
+        requestFrame();
+      }, 180);
+    }
+
+    function updateView() {
+      // The shader's horizontal basis is mirrored relative to Three.js cameras.
+      // Reflect the orbit so horizontal and vertical dragging both follow the hand.
+      viewPosition.copy(viewCamera.position);
+      viewPosition.x *= -1;
+      const focal = baseFocal * viewCamera.zoom;
+      if (CAM.distanceToSquared(viewPosition) < 1e-12 && Math.abs(uniforms.uFocal.value - focal) < 1e-12) return;
+      beginInteraction();
+      CAM.copy(viewPosition);
+      fwd.copy(CAM).negate().normalize();
+      right.crossVectors(worldUp, fwd).normalize();
+      up.crossVectors(fwd, right).normalize();
+      uniforms.uFocal.value = baseFocal * viewCamera.zoom;
+      zoomIn.disabled = viewCamera.zoom >= controls.maxZoom - 1e-6;
+      zoomOut.disabled = viewCamera.zoom <= controls.minZoom + 1e-6;
+      cacheDirty = true;
+      requestFrame();
+      if (!controlsActive) settleInteraction();
+    }
+
+    controls.addEventListener('start', () => {
+      controlsActive = true;
+      canvas.classList.add('dragging');
+    });
+    controls.addEventListener('change', updateView);
+    controls.addEventListener('end', () => {
+      controlsActive = false;
+      canvas.classList.remove('dragging');
+      settleInteraction();
+    });
+
+    function zoomBy(factor) {
+      controls.dollyIn(1 / factor);
+    }
+
+    zoomIn.addEventListener('click', () => zoomBy(1.2));
+    zoomOut.addEventListener('click', () => zoomBy(1 / 1.2));
+    resetView.addEventListener('click', () => controls.reset());
+    canvas.addEventListener('keydown', event => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      const turn = Math.PI / 36;
+      switch (event.key) {
+        case 'ArrowLeft': controls.rotateLeft(-turn); break;
+        case 'ArrowRight': controls.rotateLeft(turn); break;
+        case 'ArrowUp': controls.rotateUp(-turn); break;
+        case 'ArrowDown': controls.rotateUp(turn); break;
+        case '+': case '=': zoomBy(1.2); break;
+        case '-': case '−': zoomBy(1 / 1.2); break;
+        case 'Home': controls.reset(); break;
+        default: return;
+      }
+      event.preventDefault();
+    });
 
     function requestFrame() {
       if (!frameId && !contextLost && !document.hidden) frameId = requestAnimationFrame(frame);
@@ -653,8 +844,9 @@
         lastDisplayDpr = displayDpr;
       }
       // Apply quality after the display/pixel caps so every step lowers the load.
-      const baseDpr = Math.min(displayDpr, 2, Math.sqrt(MAX_PIXELS / (w * h)));
-      const dpr = baseDpr * quality;
+      const pixelBudget = interacting ? PREVIEW_PIXELS : MAX_PIXELS;
+      const baseDpr = Math.min(displayDpr, 2, Math.sqrt(pixelBudget / (w * h)));
+      const dpr = baseDpr * (interacting ? 1 : quality);
 
       // Reallocating the composer targets is not free, and ResizeObserver also
       // fires once on observe.
@@ -673,7 +865,8 @@
       const landscape = THREE.MathUtils.smoothstep(aspect, 0.85, 1.50);
       const shift = landscape * 0.04 * aspect;
       uniforms.uCenter.value.set(shift, 0);
-      uniforms.uFocal.value = THREE.MathUtils.lerp(0.88, FOCAL, landscape);
+      baseFocal = THREE.MathUtils.lerp(0.88, FOCAL, landscape);
+      uniforms.uFocal.value = baseFocal * viewCamera.zoom;
       if (rayCache) {
         rayCache.setSize(renderW, renderH);
         cacheDirty = true;
@@ -692,7 +885,9 @@
       uniforms.uTime.value = elapsed;
       renderScene();
       canvas.classList.add('ready');
+      viewControls.hidden = false;
       if (reducedMotion.matches) return;
+      if (interacting) { requestFrame(); return; }
 
       // Trial a lower resolution below ~45 fps. A 30 Hz display or browser frame
       // cap is not GPU overload: if the trial does not improve timing by 10%,
@@ -748,6 +943,16 @@
     });
     document.addEventListener('visibilitychange', () => {
       pause();
+      // Pointer gestures can end while a tab is hidden. Never retain a preview
+      // resolution or a stuck drag cursor when returning to the page.
+      cancelInteraction();
+      if (!document.hidden) { resize(); requestFrame(); }
+    });
+    addEventListener('blur', () => {
+      // Keyup and pointerup may be delivered to another window after focus moves.
+      controls.enableZoom = true;
+      if (!interacting && !controlsActive && activePointers.size === 0) return;
+      cancelInteraction();
       if (!document.hidden) { resize(); requestFrame(); }
     });
     reducedMotion.addEventListener('change', () => {
