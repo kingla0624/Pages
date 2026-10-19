@@ -1,99 +1,357 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Support — Option AI</title>
-<style>
-  :root{color-scheme:light dark;--fg:#1b1f27;--mut:#5b6472;--bg:#ffffff;--line:#e3e7ee;--accent:#1e3a8a}
-  @media (prefers-color-scheme:dark){:root{--fg:#e7ebf2;--mut:#9aa5b6;--bg:#12151b;--line:#262c37;--accent:#7cb8ff}}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);
-       font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-       -webkit-text-size-adjust:100%}
-  main{max-width:720px;margin:0 auto;padding:48px 22px 80px}
-  h1{font-size:30px;line-height:1.25;margin:0 0 6px;letter-spacing:-.02em}
-  .sub{color:var(--mut);margin:0 0 34px;font-size:15px}
-  h2{font-size:19px;margin:38px 0 10px;letter-spacing:-.01em}
-  h3{font-size:16px;margin:22px 0 4px;font-weight:650}
-  ul{padding-left:22px;margin:10px 0}
-  li{margin:6px 0}
-  .card{border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:0 0 10px}
-  .card p{margin:6px 0 0}
-  .mail{font-size:19px;font-weight:650;letter-spacing:-.01em}
-  .q{color:var(--mut);font-size:15px;margin:2px 0 0}
-  dl{margin:10px 0}
-  dt{font-weight:650;margin:18px 0 2px}
-  dd{margin:0;color:var(--fg)}
-  footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);color:var(--mut);font-size:14px}
-  a{color:var(--accent)}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Contact app support, troubleshoot issues, report a problem, and find help with purchases, accessibility, privacy, and local data.">
+  <meta name="color-scheme" content="light dark">
+  <title>App Support</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --background: #ffffff;
+      --surface: #f5f7fa;
+      --text: #202124;
+      --muted: #5f636b;
+      --line: #dce0e5;
+      --link: #0759ad;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background: #151619;
+        --surface: #202328;
+        --text: #eceef2;
+        --muted: #adb3bd;
+        --line: #383d45;
+        --link: #91bdff;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-padding-top: 28px; }
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text);
+      font: 16px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+    a {
+      color: var(--link);
+      text-underline-offset: 3px;
+      text-decoration-thickness: 1px;
+      overflow-wrap: anywhere;
+    }
+    a:hover { text-decoration-thickness: 2px; }
+    :focus-visible { outline: 3px solid var(--link); outline-offset: 5px; border-radius: 2px; }
+    .skip-link {
+      position: absolute;
+      top: 12px;
+      left: 20px;
+      z-index: 2;
+      padding: 10px 16px;
+      background: var(--background);
+      transform: translateY(-180%);
+    }
+    .skip-link:focus { transform: none; }
+    .site-header { border-bottom: 1px solid var(--line); }
+    .header-inner {
+      max-width: 1080px;
+      min-height: 72px;
+      margin: 0 auto;
+      padding: 16px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .site-name { color: var(--text); font-size: 17px; font-weight: 650; letter-spacing: -.02em; text-decoration: none; }
+    .header-link { font-size: 14px; }
+    .layout {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 64px 28px 0;
+      display: grid;
+      grid-template-columns: 224px minmax(0, 720px);
+      column-gap: 80px;
+      align-items: start;
+    }
+    .page-header { grid-column: 2; padding-bottom: 36px; }
+    .eyebrow {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 0 0 20px; font-size: clamp(34px, 4vw, 48px); font-weight: 650; line-height: 1.15; letter-spacing: -.035em; }
+    .introduction { margin: 0; max-width: 62ch; color: var(--muted); font-size: 18px; line-height: 1.65; }
+    .page-meta { margin-top: 24px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px 28px; color: var(--muted); font-size: 14px; }
+    .page-date { display: inline-flex; flex-wrap: wrap; gap: 4px 8px; }
+    .page-date time { color: var(--text); white-space: nowrap; }
+    .print-action {
+      display: none;
+      min-height: 44px;
+      padding: 4px 0;
+      border: 0;
+      background: transparent;
+      color: var(--link);
+      font: inherit;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+    }
+    .js .print-action { display: inline-block; }
+    .sidebar { grid-column: 1; grid-row: 1 / span 2; position: sticky; top: 32px; }
+    .contents summary { width: fit-content; color: var(--text); font-size: 14px; font-weight: 650; cursor: pointer; }
+    .contents summary::marker { color: var(--muted); font-size: 11px; }
+    .contents nav { margin-top: 18px; }
+    .contents ol {
+      max-height: calc(100vh - 180px);
+      max-height: calc(100svh - 180px);
+      overflow-y: auto;
+      margin: 0;
+      padding: 4px 7px;
+      list-style: none;
+    }
+    .contents li { margin: 0; }
+    .contents a { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 8px; padding: 8px 0; color: var(--muted); font-size: 13px; line-height: 1.5; text-decoration: none; }
+    .contents a:hover, .contents a[aria-current="location"] { color: var(--link); }
+    .contents a:hover .contents-label, .contents a[aria-current="location"] .contents-label { text-decoration: underline; text-underline-offset: 3px; }
+    .contents-number { font-variant-numeric: tabular-nums; }
+    .sidebar-note { margin: 24px 0 0; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; line-height: 1.65; }
+    .sidebar-note a { display: inline-block; margin-top: 4px; }
+    .page-content { grid-column: 2; min-width: 0; }
+    section { margin-top: 44px; }
+    section + section { padding-top: 36px; border-top: 1px solid var(--line); }
+    h2 { margin: 0 0 18px; font-size: 25px; font-weight: 650; line-height: 1.3; letter-spacing: -.025em; }
+    h3 { margin: 26px 0 8px; font-size: 17px; font-weight: 650; line-height: 1.5; letter-spacing: -.01em; }
+    p { margin: 0 0 16px; }
+    ul, ol { margin: 16px 0; padding-left: 24px; }
+    li { margin: 10px 0; padding-left: 2px; }
+    strong { font-weight: 650; }
+    .section-number { display: block; margin-bottom: 9px; color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: .06em; }
+    .contact-block { margin-top: 24px; padding: 20px 24px; border-left: 3px solid var(--link); background: var(--surface); }
+    .contact-block p { margin: 0; }
+    .contact-label { color: var(--muted); font-size: 14px; }
+    .contact-address { display: inline-block; margin-top: 5px; font-size: 20px; }
+    .page-footer { grid-column: 2; margin-top: 56px; padding: 24px 0 48px; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; color: var(--muted); font-size: 13px; }
+    .page-footer p { margin: 0; }
+    @media (max-width: 1000px) {
+      .layout { grid-template-columns: 200px minmax(0, 1fr); column-gap: 40px; }
+    }
+    @media (max-width: 800px) {
+      .header-inner { min-height: 64px; padding: 14px 24px; }
+      .layout { display: block; max-width: 768px; padding: 40px 24px 0; }
+      .page-header { padding-bottom: 28px; }
+      .sidebar { position: static; margin: 0 0 32px; }
+      .contents { padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .contents summary { width: auto; min-height: 44px; padding: 10px 0; }
+      .contents nav { margin-top: 12px; }
+      .contents ol { max-height: none; overflow: visible; padding-bottom: 8px; }
+      .contents a { min-height: 44px; padding: 10px 0; font-size: 14px; }
+      .sidebar-note { display: none; }
+      h2 { font-size: 23px; }
+      section { margin-top: 36px; }
+      section + section { padding-top: 28px; }
+      .page-footer { margin-top: 36px; }
+    }
+    @media (max-width: 359px) {
+      .header-inner { padding-inline: 20px; gap: 12px; }
+      .header-link { font-size: 13px; }
+      .layout { padding: 32px 20px 0; }
+      .introduction { font-size: 17px; }
+      .contact-address { font-size: 18px; }
+    }
+    @media (forced-colors: active) {
+      :focus-visible { outline-color: Highlight; }
+    }
+    @media print {
+      :root { color-scheme: light; --background: #fff; --surface: #fff; --text: #000; --muted: #333; --line: #aaa; --link: #000; }
+      @page { margin: 18mm; }
+      body { font-size: 10.5pt; line-height: 1.5; }
+      .site-header, .skip-link, .sidebar, .print-action, .js .print-action, .back-to-top { display: none; }
+      .layout { display: block; max-width: none; margin: 0; padding: 0; }
+      .page-header { padding-bottom: 24px; }
+      h1 { font-size: 28pt; }
+      .introduction { font-size: 12pt; }
+      h2 { font-size: 16pt; }
+      h3 { font-size: 11pt; }
+      h2, h3 { break-after: avoid; }
+      section { margin-top: 28px; }
+      section + section { padding-top: 20px; }
+      .page-footer { margin-top: 28px; padding-bottom: 0; }
+      p, li { orphans: 3; widows: 3; }
+      a { color: #000; }
+    }
+
+    .contact-block .contact-hint { margin: 8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+    .data-note { margin-top: 20px; padding-left: 16px; border-left: 2px solid var(--line); }
+    @media (max-width: 800px) {
+      .contact-block { padding: 18px 20px; }
+      .page-meta { margin-top: 16px; }
+    }
+    @media print {
+      .contact-block { padding: 12px 16px; }
+      .contact-hint { font-size: 10pt; }
+      .contact-address { font-size: 12pt; }
+      .footer-links { display: none; }
+    }
+  </style>
 </head>
-<body>
-<main>
-
-<h1>Option AI — Support</h1>
-<p class="sub">Questions, bug reports and feature requests</p>
-
-<div class="card">
-  <p class="mail"><a href="mailto:kingla0810@outlook.com">kingla0810@outlook.com</a></p>
-  <p class="q">Every message is read. When reporting a problem, please include your iPhone model, your iOS version, and what you were doing when it happened — it makes a fix far more likely.</p>
-</div>
-
-<h2>What this app is</h2>
-<p>Option AI is an offline sandbox for studying option strategies. It prices structures with the Black-Scholes-Merton model, draws payoff and Greek profiles, and lets you take them apart — on a self-contained simulated instrument. It is not connected to any exchange, broker or data vendor, it executes no trades, and it offers no investment advice.</p>
-
-<h2>Frequently asked</h2>
-
-<dl>
-
-<dt>Why doesn't the price match the real market?</dt>
-<dd>Because it is not a market price. The underlying is generated on your device by a simulation, so you can experiment freely without a data subscription. It is not a quote, and no number in the app comes from a real exchange, broker or vendor.</dd>
-
-<dt>Can I connect my broker, or import my real positions?</dt>
-<dd>No. The app has no network access at all — there is no account, no sign-in and no way to link an external service. Everything happens on your device.</dd>
-
-<dt>I edited a built-in strategy and my changes vanished. Why?</dt>
-<dd>Edits to a built-in template are session-only by design, and are also cleared when you change the base price or reset market settings. To keep them, use <em>Save edits as new strategy</em> — that copies the legs into one of your own slots, which is saved permanently.</dd>
-
-<dt>My saved positions disappeared.</dt>
-<dd>Saved positions are tied to the base price they were taken at, and are hidden while the base price is set to something else. Set the base price back and they reappear. They are also capped at six — saving a seventh replaces the oldest.</dd>
-
-<dt>Why can I only keep six custom strategies?</dt>
-<dd>The app deliberately keeps a small, tidy set: up to six of your own strategies, each with up to six legs, and up to six saved positions. Delete one to make room for another.</dd>
-
-<dt>Does it support American-style options or early exercise?</dt>
-<dd>No. Pricing is European exercise only, using Black-Scholes-Merton with a continuous dividend yield. There is no early-exercise, assignment or pin-risk modelling. Choosing the Futures underlying type locks the carry to the risk-free rate, which makes the same formula behave as Black-76.</dd>
-
-<dt>What does "probability of profit" actually mean here?</dt>
-<dd>It is a risk-neutral, model-implied figure: the probability that the payoff finishes above zero under the model's own lognormal terminal distribution, integrated between the breakevens. It is meant for comparing structures against each other. It is not a forecast, and it is not based on any historical or market-implied distribution.</dd>
-
-<dt>Are commissions, spreads or slippage included?</dt>
-<dd>No. All values are theoretical model prices. There is no bid/ask spread, no commission, no slippage, no margin and no liquidity modelling.</dd>
-
-<dt>Is there an iPad or Mac version? A light theme? Other languages?</dt>
-<dd>Not currently. Option AI is an iPhone app, dark appearance only, with an English-only interface. If any of these matter to you, say so by email — it genuinely affects what gets built next.</dd>
-
-<dt>What data do you collect about me?</dt>
-<dd>Option AI itself does not transmit personal information, usage data, or diagnostics to us and includes no analytics or advertising. Local data may be included in system backups, and information you choose to send us by email is handled separately. See the <a href="privacy.html">privacy policy</a> for the details.</dd>
-
-<dt>How do I delete everything the app stored?</dt>
-<dd>Deleting the app from your iPhone removes its local app container; offloading the app preserves its data. You can also clear items individually inside the app by deleting your custom strategies and saved positions, or by resetting market settings. Device or iCloud backups and any copies you saved elsewhere need to be managed separately.</dd>
-
-</dl>
-
-<h2>Requirements</h2>
-<ul>
-  <li>iPhone running iOS 26 or later</li>
-  <li>No account, no subscription, no in-app purchases</li>
-  <li>No internet connection required — or used</li>
-</ul>
-
-<h2>A note on what this app is for</h2>
-<p>Option AI is a study and analysis tool. It is not investment advice, not a recommendation, and not a substitute for professional guidance. Options carry substantial risk and are not suitable for every investor. Any decision you make with real money is your own.</p>
-
-<footer>Option AI · Support · <a href="privacy.html">Privacy Policy</a> · Last updated 19 October 2026</footer>
-
-</main>
+<body id="top">
+  <a class="skip-link" href="#support-content">Skip to support content</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="site-name" href="#top">Support</a>
+      <a class="header-link" href="privacy.html">Privacy policy</a>
+    </div>
+  </header>
+  <main class="layout">
+    <header class="page-header">
+      <p class="eyebrow">Help &amp; support</p>
+      <h1>App Support</h1>
+      <p class="introduction">Help with using an app, reporting a problem, and managing your data.</p>
+      <div class="contact-block">
+        <p class="contact-label">Contact support</p>
+        <a class="contact-address" href="mailto:kingla0810@outlook.com">kingla0810@outlook.com</a>
+        <p class="contact-hint">Include the app's name and a brief description of what you need help with.</p>
+      </div>
+      <div class="page-meta">
+        <span class="page-date">Updated <time datetime="2026-10-19">19 October 2026</time></span>
+        <button class="print-action" type="button" id="print-support">Print this guide</button>
+      </div>
+    </header>
+    <aside class="sidebar" aria-label="Support navigation">
+      <details class="contents" id="support-contents" open>
+        <summary>On this page</summary>
+        <nav aria-label="Support sections">
+          <ol>
+            <li><a href="#contact"><span class="contents-number" aria-hidden="true">01</span><span class="contents-label">Get help</span></a></li>
+            <li><a href="#troubleshooting"><span class="contents-number" aria-hidden="true">02</span><span class="contents-label">Troubleshooting</span></a></li>
+            <li><a href="#report-a-problem"><span class="contents-number" aria-hidden="true">03</span><span class="contents-label">Report a problem</span></a></li>
+            <li><a href="#compatibility"><span class="contents-number" aria-hidden="true">04</span><span class="contents-label">Compatibility &amp; features</span></a></li>
+            <li><a href="#purchases"><span class="contents-number" aria-hidden="true">05</span><span class="contents-label">Purchases &amp; billing</span></a></li>
+            <li><a href="#privacy-and-data"><span class="contents-number" aria-hidden="true">06</span><span class="contents-label">Privacy &amp; data</span></a></li>
+            <li><a href="#accessibility"><span class="contents-number" aria-hidden="true">07</span><span class="contents-label">Accessibility &amp; feedback</span></a></li>
+          </ol>
+        </nav>
+      </details>
+      <p class="sidebar-note">Need to contact us directly?<br><a href="mailto:kingla0810@outlook.com">Email support</a></p>
+    </aside>
+    <article class="page-content" id="support-content" aria-label="App support guide" tabindex="-1">
+      <section id="contact" aria-labelledby="contact-title">
+        <h2 id="contact-title"><span class="section-number" aria-hidden="true">01</span>Get help</h2>
+        <p>This page provides support for apps that link to it from within the app or their App Store product page. Use the email address above for questions, technical problems, privacy requests, accessibility issues, or suggestions.</p>
+        <p>Please identify the app you are asking about. If a mail app does not open when you select the address, copy it into your preferred email service. If you have already contacted us about the same issue, reply to the existing email thread to add information.</p>
+        <p>For a useful starting point, see <a href="#troubleshooting">Troubleshooting</a> or the <a href="#report-a-problem">problem-report checklist</a>. For a purchase billed by Apple, see <a href="#purchases">Purchases and billing</a>.</p>
+      </section>
+      <section id="troubleshooting" aria-labelledby="troubleshooting-title">
+        <h2 id="troubleshooting-title"><span class="section-number" aria-hidden="true">02</span>Troubleshooting</h2>
+        <p>If an app is not behaving as expected, start with these steps:</p>
+        <ol>
+          <li><strong>Save your work.</strong> Use any save or export controls the app provides before closing it or restarting your device.</li>
+          <li><strong>Check for an app update.</strong> Look for an available update on the app's App Store product page, and check its compatibility information.</li>
+          <li><strong>Reopen the app.</strong> If the issue continues, restart your device and try the same action again.</li>
+          <li><strong>Check relevant device settings.</strong> Make sure there is available storage and, if a feature needs a permission, review that permission in Settings.</li>
+          <li><strong>Check the connection for online features.</strong> If the affected feature requires internet access, try again with a working connection. This step does not apply to features that work entirely on your device.</li>
+        </ol>
+        <p class="data-note"><strong>Before deleting, reinstalling, or resetting an app:</strong> these actions can remove local information. Preserve any data you need first. If you are unsure what will be removed, contact us before proceeding.</p>
+        <p>If the problem continues, send the details in the next section. You do not need to repeat steps that could put your work at risk.</p>
+      </section>
+      <section id="report-a-problem" aria-labelledby="report-title">
+        <h2 id="report-title"><span class="section-number" aria-hidden="true">03</span>Report a problem</h2>
+        <p>A useful email subject is the app's name followed by a short description of the issue. Include whichever of the following details you can:</p>
+        <ul>
+          <li><strong>App name and version.</strong> Use the version shown in the app's About or Settings screen, if available.</li>
+          <li><strong>Device and system version.</strong> Tell us the device model and operating-system version.</li>
+          <li><strong>Steps to reproduce.</strong> Describe what you did before the issue occurred.</li>
+          <li><strong>Expected and actual results.</strong> Explain what you expected to happen and what happened instead, including any visible error message.</li>
+          <li><strong>Frequency and recent changes.</strong> Note whether it happens every time and whether it began after an update or a settings change.</li>
+          <li><strong>Optional screenshots or recordings.</strong> Attach them only if helpful, with personal information and unrelated content removed or obscured.</li>
+        </ul>
+        <p>Do not send passwords, verification codes, full payment-card details, or information that is unnecessary to explain the issue. Any diagnostic material you include in an email is information you choose to share; contacting support does not give us remote access to your device or its local app data.</p>
+      </section>
+      <section id="compatibility" aria-labelledby="compatibility-title">
+        <h2 id="compatibility-title"><span class="section-number" aria-hidden="true">04</span>Compatibility and features</h2>
+        <p>Device requirements, supported operating systems, languages, features, and pricing depend on the app. Check the corresponding App Store product page and the information in the app for the version you use.</p>
+        <p>If a feature looks different or is unavailable on your device, include the app name, version, device model, and the feature you expected when contacting us. Do not assume that instructions or capabilities for one app apply to another.</p>
+      </section>
+      <section id="purchases" aria-labelledby="purchases-title">
+        <h2 id="purchases-title"><span class="section-number" aria-hidden="true">05</span>Purchases and billing</h2>
+        <p>This section applies only if your issue concerns a paid download, in-app purchase, or subscription. It does not mean that every app offers purchases or subscriptions.</p>
+        <h3>Restore eligible purchases</h3>
+        <p>If the app offers a restore-purchases control, use it while signed in to the Apple Account used for the original purchase. Some purchases, including consumable items, cannot be restored. See <a href="https://support.apple.com/108096">Apple's help with missing in-app purchases</a> for the applicable steps.</p>
+        <h3>Manage or cancel a subscription</h3>
+        <p>For a subscription billed by Apple, use the subscription settings for your Apple Account. <strong>Deleting an app does not cancel its subscription.</strong> Follow <a href="https://support.apple.com/118428">Apple's subscription cancellation instructions</a> to review or stop a renewal.</p>
+        <h3>Request a refund or question a charge</h3>
+        <p>Apple reviews refund requests for purchases billed by Apple. You can <a href="https://reportaproblem.apple.com/">report a problem or request a refund from Apple</a>; eligibility depends on Apple's policies and applicable law. See <a href="https://support.apple.com/118223">Apple's refund guidance</a> for details. We cannot guarantee a refund outcome.</p>
+        <p>If another provider billed your purchase, contact that provider using the details on your receipt. For an app feature that remains unavailable after an eligible purchase, email us with the app name and a description of the issue; avoid including full payment details.</p>
+      </section>
+      <section id="privacy-and-data" aria-labelledby="privacy-title">
+        <h2 id="privacy-title"><span class="section-number" aria-hidden="true">06</span>Privacy and data</h2>
+        <p>The <a href="privacy.html">Privacy Policy</a> describes support correspondence, website visits, and apps that follow its stated on-device practices. For any additional data processing, also read the privacy notice provided by the app or feature.</p>
+        <h3>Local information and backups</h3>
+        <p>Use available in-app delete or reset controls to manage saved information. Deleting an app generally removes its local app container; offloading or archiving it may preserve its data. Device or cloud backups, exported files, and information shared with another service need to be managed separately.</p>
+        <p>We cannot remotely retrieve, restore, or erase information held only on your device. If you need help identifying the relevant local controls, tell us the app name and the type of information involved. See the policy's <a href="privacy.html#deletion">data-deletion guidance</a>.</p>
+        <h3>Privacy requests and support messages</h3>
+        <p>Email the support address above to ask about information we hold, request deletion of support correspondence, or exercise an applicable privacy right. Include enough context to locate your request without sending unnecessary sensitive information. The policy explains <a href="privacy.html#retention">retention</a> and <a href="privacy.html#rights">privacy rights</a>.</p>
+        <h3>Accounts, where available</h3>
+        <p>If the app supports creating an account, use its in-app account-deletion process to initiate deletion. Contact us if you need help locating or using it. Removing an app from your device is different from deleting an account or cancelling a subscription.</p>
+      </section>
+      <section id="accessibility" aria-labelledby="accessibility-title">
+        <h2 id="accessibility-title"><span class="section-number" aria-hidden="true">07</span>Accessibility and feedback</h2>
+        <p>For an accessibility issue, describe the screen or task where you encountered it and what made it difficult to use. If relevant, you may include the assistive feature you were using, such as VoiceOver, larger text, keyboard navigation, or a display accommodation.</p>
+        <p>For a feature suggestion, explain what you are trying to do and how the proposed change would help. Send feedback to <a href="mailto:kingla0810@outlook.com">kingla0810@outlook.com</a>, and include the app's name so we can understand the context.</p>
+      </section>
+    </article>
+    <footer class="page-footer">
+      <p>App Support · Updated <time datetime="2026-10-19">19 October 2026</time></p>
+      <div class="footer-links">
+        <a href="privacy.html">Privacy policy</a>
+        <a class="back-to-top" href="#top">Back to top ↑</a>
+      </div>
+    </footer>
+  </main>
+  <script>
+    (() => {
+      const contents = document.getElementById('support-contents');
+      contents.open = !window.matchMedia('(max-width: 800px)').matches;
+      document.getElementById('print-support').addEventListener('click', () => window.print());
+      document.documentElement.classList.add('js');
+      const links = Array.from(contents.querySelectorAll('a'));
+      const sections = Array.from(document.querySelectorAll('.page-content section'));
+      const markCurrent = id => {
+        links.forEach(link => {
+          if (link.hash === '#' + id) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      };
+      const updateCurrent = () => {
+        let current = sections[0];
+        const threshold = Math.min(160, window.innerHeight * .25);
+        sections.forEach(section => {
+          if (section.getBoundingClientRect().top <= threshold) current = section;
+        });
+        if (Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 2) {
+          current = sections[sections.length - 1];
+        }
+        markCurrent(current.id);
+      };
+      let scheduled = false;
+      const scheduleUpdate = () => {
+        if (scheduled) return;
+        scheduled = true;
+        window.requestAnimationFrame(() => {
+          updateCurrent();
+          scheduled = false;
+        });
+      };
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      updateCurrent();
+    })();
+    </script>
 </body>
 </html>
