@@ -1,75 +1,399 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Privacy Policy — Option AI</title>
-<style>
-  :root{color-scheme:light dark;--fg:#1b1f27;--mut:#5b6472;--bg:#ffffff;--line:#e3e7ee;--accent:#1e3a8a}
-  @media (prefers-color-scheme:dark){:root{--fg:#e7ebf2;--mut:#9aa5b6;--bg:#12151b;--line:#262c37;--accent:#7cb8ff}}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);
-       font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-       -webkit-text-size-adjust:100%}
-  main{max-width:720px;margin:0 auto;padding:48px 22px 80px}
-  h1{font-size:30px;line-height:1.25;margin:0 0 6px;letter-spacing:-.02em}
-  .sub{color:var(--mut);margin:0 0 34px;font-size:15px}
-  h2{font-size:19px;margin:38px 0 10px;letter-spacing:-.01em}
-  p,li{color:var(--fg)}
-  ul{padding-left:22px;margin:10px 0}
-  li{margin:6px 0}
-  .lead{border-left:3px solid var(--accent);padding:14px 0 14px 16px;margin:0 0 8px;background:transparent}
-  .lead strong{font-weight:650}
-  code{font:13.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
-       background:color-mix(in srgb,var(--fg) 8%,transparent);padding:1px 5px;border-radius:4px}
-  footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);color:var(--mut);font-size:14px}
-  a{color:var(--accent)}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How apps that link to this policy handle local data, support correspondence, and website visits, and how to exercise your privacy choices.">
+  <meta name="color-scheme" content="light dark">
+  <title>Privacy Policy</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --background: #ffffff;
+      --surface: #f5f7fa;
+      --text: #202124;
+      --muted: #5f636b;
+      --line: #dce0e5;
+      --link: #0759ad;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background: #151619;
+        --surface: #202328;
+        --text: #eceef2;
+        --muted: #adb3bd;
+        --line: #383d45;
+        --link: #91bdff;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-padding-top: 28px; }
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text);
+      font: 16px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-text-size-adjust: 100%;
+    }
+    a {
+      color: var(--link);
+      text-underline-offset: 3px;
+      text-decoration-thickness: 1px;
+      overflow-wrap: anywhere;
+    }
+    a:hover { text-decoration-thickness: 2px; }
+    :focus-visible { outline: 3px solid var(--link); outline-offset: 5px; border-radius: 2px; }
+    .skip-link {
+      position: absolute;
+      top: 12px;
+      left: 20px;
+      z-index: 2;
+      padding: 10px 16px;
+      background: var(--background);
+      transform: translateY(-180%);
+    }
+    .skip-link:focus { transform: none; }
+    .site-header { border-bottom: 1px solid var(--line); }
+    .header-inner {
+      max-width: 1080px;
+      min-height: 72px;
+      margin: 0 auto;
+      padding: 16px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .site-name { color: var(--text); font-size: 17px; font-weight: 650; letter-spacing: -.02em; text-decoration: none; }
+    .header-link { font-size: 14px; }
+    .layout {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 64px 28px 0;
+      display: grid;
+      grid-template-columns: 224px minmax(0, 720px);
+      column-gap: 80px;
+      align-items: start;
+    }
+    .policy-header { grid-column: 2; padding-bottom: 36px; }
+    .eyebrow {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 0 0 20px; font-size: clamp(34px, 4vw, 48px); font-weight: 650; line-height: 1.15; letter-spacing: -.035em; }
+    .introduction { margin: 0; max-width: 62ch; color: var(--muted); font-size: 18px; line-height: 1.65; }
+    .policy-meta { margin-top: 24px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px 28px; color: var(--muted); font-size: 14px; }
+    .policy-date { display: inline-flex; flex-wrap: wrap; gap: 4px 8px; }
+    .policy-date time { color: var(--text); white-space: nowrap; }
+    .print-action {
+      display: none;
+      min-height: 44px;
+      padding: 4px 0;
+      border: 0;
+      background: transparent;
+      color: var(--link);
+      font: inherit;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+    }
+    .js .print-action { display: inline-block; }
+    .sidebar { grid-column: 1; grid-row: 1 / span 2; position: sticky; top: 32px; }
+    .contents summary { width: fit-content; color: var(--text); font-size: 14px; font-weight: 650; cursor: pointer; }
+    .contents summary::marker { color: var(--muted); font-size: 11px; }
+    .contents nav { margin-top: 18px; }
+    .contents ol {
+      max-height: calc(100vh - 180px);
+      max-height: calc(100svh - 180px);
+      overflow-y: auto;
+      margin: 0;
+      padding: 4px 7px;
+      list-style: none;
+    }
+    .contents li { margin: 0; }
+    .contents a { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 8px; padding: 8px 0; color: var(--muted); font-size: 13px; line-height: 1.5; text-decoration: none; }
+    .contents a:hover, .contents a[aria-current="location"] { color: var(--link); }
+    .contents a:hover .contents-label, .contents a[aria-current="location"] .contents-label { text-decoration: underline; text-underline-offset: 3px; }
+    .contents-number { font-variant-numeric: tabular-nums; }
+    .sidebar-note { margin: 24px 0 0; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; line-height: 1.65; }
+    .sidebar-note a { display: inline-block; margin-top: 4px; }
+    .policy-content { grid-column: 2; min-width: 0; }
+    .summary { margin-bottom: 48px; padding: 24px 28px; border-left: 3px solid var(--link); background: var(--surface); }
+    .summary h2 { margin: 0 0 12px; font-size: 17px; }
+    .summary ul { margin: 0; padding-left: 19px; }
+    .summary li { margin: 6px 0; font-size: 15px; }
+    section { margin-top: 44px; }
+    section + section { padding-top: 36px; border-top: 1px solid var(--line); }
+    h2 { margin: 0 0 18px; font-size: 25px; font-weight: 650; line-height: 1.3; letter-spacing: -.025em; }
+    h3 { margin: 26px 0 8px; font-size: 17px; font-weight: 650; line-height: 1.5; letter-spacing: -.01em; }
+    p { margin: 0 0 16px; }
+    ul, ol { margin: 16px 0; padding-left: 24px; }
+    li { margin: 10px 0; padding-left: 2px; }
+    strong { font-weight: 650; }
+    .section-number { display: block; margin-bottom: 9px; color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: .06em; }
+    .contact-block { margin-top: 24px; padding: 24px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .contact-block p { margin: 0; }
+    .contact-label { color: var(--muted); font-size: 14px; }
+    .contact-address { display: inline-block; margin-top: 5px; font-size: 20px; }
+    .policy-footer { grid-column: 2; margin-top: 56px; padding: 24px 0 48px; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; color: var(--muted); font-size: 13px; }
+    .policy-footer p { margin: 0; }
+    @media (max-width: 1000px) {
+      .layout { grid-template-columns: 200px minmax(0, 1fr); column-gap: 40px; }
+    }
+    @media (max-width: 800px) {
+      .header-inner { min-height: 64px; padding: 14px 24px; }
+      .layout { display: block; max-width: 768px; padding: 40px 24px 0; }
+      .policy-header { padding-bottom: 28px; }
+      .sidebar { position: static; margin: 0 0 32px; }
+      .contents { padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .contents summary { width: auto; min-height: 44px; padding: 10px 0; }
+      .contents nav { margin-top: 12px; }
+      .contents ol { max-height: none; overflow: visible; padding-bottom: 8px; }
+      .contents a { min-height: 44px; padding: 10px 0; font-size: 14px; }
+      .sidebar-note { display: none; }
+      .summary { margin-bottom: 36px; padding: 20px; }
+      h2 { font-size: 23px; }
+      section { margin-top: 36px; }
+      section + section { padding-top: 28px; }
+      .policy-footer { margin-top: 36px; }
+    }
+    @media (max-width: 359px) {
+      .header-inner { padding-inline: 20px; gap: 12px; }
+      .header-link { font-size: 13px; }
+      .layout { padding: 32px 20px 0; }
+      .introduction { font-size: 17px; }
+      .contact-address { font-size: 18px; }
+    }
+    @media (forced-colors: active) {
+      .summary { border-color: CanvasText; }
+      :focus-visible { outline-color: Highlight; }
+    }
+    @media print {
+      :root { color-scheme: light; --background: #fff; --surface: #fff; --text: #000; --muted: #333; --line: #aaa; --link: #000; }
+      @page { margin: 18mm; }
+      body { font-size: 10.5pt; line-height: 1.5; }
+      .site-header, .skip-link, .sidebar, .print-action, .js .print-action, .back-to-top { display: none; }
+      .layout { display: block; max-width: none; margin: 0; padding: 0; }
+      .policy-header { padding-bottom: 24px; }
+      h1 { font-size: 28pt; }
+      .introduction { font-size: 12pt; }
+      h2 { font-size: 16pt; }
+      h3 { font-size: 11pt; }
+      h2, h3 { break-after: avoid; }
+      .summary { margin-bottom: 28px; padding: 12px 16px; }
+      .summary li { font-size: 10.5pt; }
+      section { margin-top: 28px; }
+      section + section { padding-top: 20px; }
+      .policy-footer { margin-top: 28px; padding-bottom: 0; }
+      p, li { orphans: 3; widows: 3; }
+      a { color: #000; }
+    }
+  </style>
 </head>
-<body>
-<main>
-
-<h1>Privacy Policy</h1>
-<p class="sub">Option AI &nbsp;·&nbsp; Effective 5 September 2026</p>
-
-<p class="lead"><strong>Option AI does not collect any data.</strong> The app has no network access, no account, no analytics and no advertising. Everything you enter stays on your device.</p>
-
-<h2>Data we collect</h2>
-<p>None. The app does not collect, transmit, sell, or share any personal data, usage data, identifiers, or diagnostics. There is no sign-up, no login, and no user account of any kind.</p>
-
-<h2>Network access</h2>
-<p>The app makes no network connections. It contains no networking code and no third-party SDKs, so there is no server for your information to reach — not ours, and not anyone else's.</p>
-
-<h2>What is stored on your device</h2>
-<p>So that the app remembers your work between launches, the following is saved locally in the app's own private container on your iPhone:</p>
-<ul>
-  <li><strong>Market settings</strong> — the underlying name you type, base price, volatility, interest rate, dividend yield, and your implied-volatility surface.</li>
-  <li><strong>Your custom strategies</strong> — their names, legs, and creation dates.</li>
-  <li><strong>Saved positions</strong> — the legs and theoretical entry values of positions you save to the app's local scratchpad.</li>
-  <li><strong>Interface preferences</strong> — display options such as the per-contract toggle, and the state of the built-in price simulation.</li>
-</ul>
-<p>This information never leaves your device. It is not backed up to any service by the app itself; it may be included in your own iPhone or iCloud device backup, which is controlled entirely by you in iOS Settings and is governed by Apple's privacy policy, not ours.</p>
-
-<h2>Deleting your data</h2>
-<p>Deleting the app from your iPhone permanently removes everything it stored. You can also clear individual items inside the app by deleting your custom strategies and saved positions, or by resetting market settings.</p>
-
-<h2>Third parties</h2>
-<p>The app contains no third-party software development kits, no advertising networks, no analytics or crash-reporting services, and no tracking technologies. No data is shared with anyone, because none is collected.</p>
-
-<h2>Children</h2>
-<p>The app collects no personal information from anyone, including children under 13. There is no user-generated content, no messaging, and no way for one user to reach another.</p>
-
-<h2>About the data shown in the app</h2>
-<p>This is not a privacy matter, but it is worth stating plainly: the underlying price in Option AI is produced by a simulation running on your device. It is not market data. All option values, Greeks and probabilities are theoretical model outputs. The app is a study and analysis tool; it provides no brokerage service, executes no trades, and offers no investment advice.</p>
-
-<h2>Changes to this policy</h2>
-<p>If this policy changes, the revised version will be posted at this address with a new effective date. Because the app collects nothing, we do not expect substantive changes unless the app itself gains a feature that requires them.</p>
-
-<h2>Contact</h2>
-<p>Questions about this policy or about the app: <a href="mailto:kingla0810@outlook.com">kingla0810@outlook.com</a><br>See also the <a href="support.html">support page</a>.</p>
-
-<footer>Option AI · Privacy Policy · <a href="support.html">Support</a> · Last updated 5 September 2026</footer>
-
-</main>
+<body id="top">
+  <a class="skip-link" href="#policy-content">Skip to policy content</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="site-name" href="#top">Privacy</a>
+      <a class="header-link" href="#contact">Contact about your data</a>
+    </div>
+  </header>
+  <main class="layout">
+    <header class="policy-header">
+      <p class="eyebrow">Privacy &amp; your data</p>
+      <h1>Privacy Policy</h1>
+      <p class="introduction">How the apps that link to this policy handle your information, and the choices you have over your data.</p>
+      <div class="policy-meta">
+        <span class="policy-date">Effective <time datetime="2026-10-19">19 October 2026</time></span>
+        <button class="print-action" type="button" id="print-policy">Print this policy</button>
+      </div>
+    </header>
+    <aside class="sidebar" aria-label="Policy navigation">
+      <details class="contents" id="policy-contents" open>
+        <summary>On this page</summary>
+        <nav aria-label="Policy sections">
+          <ol>
+            <li><a href="#scope"><span class="contents-number" aria-hidden="true">01</span><span class="contents-label">About this policy</span></a></li>
+            <li><a href="#app-data"><span class="contents-number" aria-hidden="true">02</span><span class="contents-label">App data</span></a></li>
+            <li><a href="#support"><span class="contents-number" aria-hidden="true">03</span><span class="contents-label">Support correspondence</span></a></li>
+            <li><a href="#website"><span class="contents-number" aria-hidden="true">04</span><span class="contents-label">Website visits</span></a></li>
+            <li><a href="#sharing"><span class="contents-number" aria-hidden="true">05</span><span class="contents-label">Sharing &amp; service providers</span></a></li>
+            <li><a href="#choices"><span class="contents-number" aria-hidden="true">06</span><span class="contents-label">Permissions &amp; consent</span></a></li>
+            <li><a href="#retention"><span class="contents-number" aria-hidden="true">07</span><span class="contents-label">Retention &amp; security</span></a></li>
+            <li><a href="#deletion"><span class="contents-number" aria-hidden="true">08</span><span class="contents-label">Deleting your data</span></a></li>
+            <li><a href="#rights"><span class="contents-number" aria-hidden="true">09</span><span class="contents-label">Your privacy rights</span></a></li>
+            <li><a href="#children"><span class="contents-number" aria-hidden="true">10</span><span class="contents-label">Children's privacy</span></a></li>
+            <li><a href="#international"><span class="contents-number" aria-hidden="true">11</span><span class="contents-label">International processing</span></a></li>
+            <li><a href="#changes"><span class="contents-number" aria-hidden="true">12</span><span class="contents-label">Changes to this policy</span></a></li>
+            <li><a href="#contact"><span class="contents-number" aria-hidden="true">13</span><span class="contents-label">Contact us</span></a></li>
+          </ol>
+        </nav>
+      </details>
+      <p class="sidebar-note">Questions about your information?<br><a href="#contact">Contact us</a></p>
+    </aside>
+    <article class="policy-content" id="policy-content" aria-label="Privacy policy" tabindex="-1">
+      <div class="summary" role="note" aria-labelledby="summary-title">
+        <h2 id="summary-title">At a glance</h2>
+        <ul>
+          <li><strong>App content is processed on your device.</strong></li>
+          <li><strong>Support messages are voluntary.</strong> We receive the information you choose to send.</li>
+          <li><strong>You have choices.</strong> Manage local data on your device or contact us about information we hold.</li>
+        </ul>
+      </div>
+      <section id="scope" aria-labelledby="scope-title">
+        <h2 id="scope-title"><span class="section-number" aria-hidden="true">01</span>About this policy</h2>
+        <p>This policy applies to applications that link to it from within the app or their app-store listing (each an “App”) and follow the on-device practices described here. It also covers related support correspondence and visits to this policy page. “We,” “us,” and “our” refer to the publisher of the App that directed you to this policy.</p>
+        <p>Personal information means information that identifies you, or can reasonably be linked to you. This policy distinguishes information that stays on your device from information we receive when you contact us and technical information used to serve this website.</p>
+        <p>If an App provides a separate privacy notice for a feature, that notice explains the additional information involved, how and why it is used, its recipients, retention, and your choices. It is presented before that feature processes the information and should be read together with this policy. A general reference to a feature or a system permission prompt does not authorize undisclosed data collection.</p>
+      </section>
+      <section id="app-data" aria-labelledby="app-data-title">
+        <h2 id="app-data-title"><span class="section-number" aria-hidden="true">02</span>App data and local processing</h2>
+        <p>The Apps covered by this policy process their content on your device. The App does not send your content, personal identifiers, usage events, or crash diagnostics to us or to service providers acting on our behalf. It does not require an account or include advertising, tracking, or third-party analytics or crash-reporting services.</p>
+        <p>Depending on the features you use, local app storage can contain:</p>
+        <ul>
+          <li><strong>Content and saved work:</strong> information you enter, create, import, or choose to save.</li>
+          <li><strong>Settings and preferences:</strong> choices that allow the App to remember how you use its features.</li>
+          <li><strong>Local working data:</strong> information needed to operate a feature or resume your work.</li>
+        </ul>
+        <p>We cannot remotely access information held only in local app storage. System backups and any information you choose to export or share are handled separately, as described below.</p>
+      </section>
+      <section id="support" aria-labelledby="support-title">
+        <h2 id="support-title"><span class="section-number" aria-hidden="true">03</span>Support correspondence</h2>
+        <p>When you email us, we receive your email address, any name shown in the message, the message contents and attachments, and technical details you choose to include, such as the App version, device model, or operating-system version.</p>
+        <p>We use this information to:</p>
+        <ul>
+          <li>Answer questions and troubleshoot the problem you report.</li>
+          <li>Handle privacy requests and communicate the outcome.</li>
+          <li>Keep records needed for follow-up, resolving disputes, security, or legal obligations.</li>
+        </ul>
+        <p>Support correspondence is voluntary and separate from normal app use. Do not send passwords or sensitive information that is unnecessary for your request. We use Microsoft Outlook to receive and store email; see the <a href="https://www.microsoft.com/privacy/privacystatement">Microsoft Privacy Statement</a>.</p>
+        <p>Where applicable law requires a legal basis, we rely on our legitimate interests in responding to support requests and maintaining necessary records, subject to your rights; legal obligations when handling legally required requests or records; and consent where that is required.</p>
+      </section>
+      <section id="website" aria-labelledby="website-title">
+        <h2 id="website-title"><span class="section-number" aria-hidden="true">04</span>Visits to this website</h2>
+        <p>This website is hosted on GitHub Pages. Opening this page sends a request to GitHub, which may process connection information such as your IP address, browser and operating-system details, the requested address, the request time, and a referring address if your browser provides one. GitHub uses technical information to deliver and secure the website and may maintain logs under the <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub Privacy Statement</a>.</p>
+        <p>This page does not set cookies or include advertising, tracking pixels, or third-party analytics. Reading the policy does not give us access to your App's local content. Website requests and hosting logs are separate from the App's on-device processing.</p>
+      </section>
+      <section id="sharing" aria-labelledby="sharing-title">
+        <h2 id="sharing-title"><span class="section-number" aria-hidden="true">05</span>Sharing and service providers</h2>
+        <p>We do not sell or rent personal information, or share it for targeted or cross-context behavioral advertising. We disclose information we hold only:</p>
+        <ul>
+          <li><strong>To necessary service providers,</strong> such as Microsoft for email and GitHub for website hosting, for the purposes described in this policy.</li>
+          <li><strong>At your direction or with your permission,</strong> when you ask us to share information.</li>
+          <li><strong>For legal and security reasons,</strong> when required by law or reasonably necessary to protect rights, safety, or security, limited to what is required or permitted by law.</li>
+        </ul>
+        <p>The App does not send its locally stored content to these providers. Microsoft processes support correspondence, and GitHub processes website connection information, as described above. Before engaging a third party to receive App user data on our behalf, we require it to provide the same or equal protection as this policy and the applicable App Store privacy requirements, and to use the data only for the disclosed purposes. We remain responsible for explaining how providers we engage handle information on our behalf.</p>
+        <h3>Services you use independently</h3>
+        <p>Your operating system, app store, device-backup provider, or a destination you choose when sharing content may process information independently under its own privacy policy. For example, app data may be included in a device or cloud backup, and a platform may collect diagnostics according to your settings. For Apple services, see the <a href="https://www.apple.com/legal/privacy/">Apple Privacy Policy</a>.</p>
+        <p>A system backup is different from an App providing its own cloud synchronization. You manage backups and platform diagnostic-sharing choices through the relevant device or service settings. When you export or share content, the destination receives the information you select.</p>
+      </section>
+      <section id="choices" aria-labelledby="choices-title">
+        <h2 id="choices-title"><span class="section-number" aria-hidden="true">06</span>Permissions and consent</h2>
+        <p>If an App feature requests access to a device capability, the permission prompt explains its purpose. You can decline optional access or change permissions in your device settings. The feature needing that permission may then be unavailable. A device permission alone does not mean information is transmitted to us.</p>
+        <p>Where processing relies on your consent, you can withdraw it through the relevant App control or by <a href="#contact">contacting us</a>. Withdrawal does not affect processing that was lawful before you withdrew consent. Withdrawing consent or revoking a permission does not automatically delete information already stored; see <a href="#deletion">Deleting your data</a>.</p>
+        <p>We explain any new processing before it begins and obtain the permission required for it. This includes clearly disclosing and obtaining explicit permission before sharing personal information with a third-party service, including a third-party AI service. The App practices above do not include such sharing.</p>
+      </section>
+      <section id="retention" aria-labelledby="retention-title">
+        <h2 id="retention-title"><span class="section-number" aria-hidden="true">07</span>Retention and security</h2>
+        <h3>Local app information</h3>
+        <p>Local retention depends on the App's features, your choices, and your device's storage management. Saved information can remain until you remove it, while temporary information may be cleared by the App or operating system. We do not hold a server copy of information stored only on your device.</p>
+        <h3>Information we receive</h3>
+        <p>We keep support correspondence while handling your request and afterwards only as needed for necessary follow-up, resolving disputes, security, or legal obligations. When those reasons no longer apply, we delete or anonymize it. You may request deletion at any time; we will explain any information we must retain and why.</p>
+        <p>Hosting logs and provider-managed backups are subject to the relevant provider's retention practices described in its privacy statement. Deleting an active record may not immediately remove copies in provider backups.</p>
+        <h3>Protecting information</h3>
+        <p>We use reasonable safeguards appropriate to the information we handle. No method of storage or transmission is completely secure. Keeping your device updated and using its security controls helps protect locally stored information.</p>
+      </section>
+      <section id="deletion" aria-labelledby="deletion-title">
+        <h2 id="deletion-title"><span class="section-number" aria-hidden="true">08</span>Deleting your data</h2>
+        <ul>
+          <li><strong>Saved app information:</strong> use available delete or reset controls in the App. Deleting the App generally removes its local app container. Offloading or archiving an App may preserve its data.</li>
+          <li><strong>Backups and exported copies:</strong> manage these separately through your device, cloud-storage provider, or the destination where you saved or shared the information. Deleting an App does not necessarily delete those copies.</li>
+          <li><strong>Information sent to us:</strong> email <a href="mailto:kingla0810@outlook.com">kingla0810@outlook.com</a> to request deletion of support correspondence or other personal information we hold. We may need limited information to locate the record and verify your request.</li>
+        </ul>
+        <p>The Apps covered by this policy do not create an account or server-side profile to delete. For information held only on your device, use the local controls above; we cannot retrieve or remotely erase it.</p>
+      </section>
+      <section id="rights" aria-labelledby="rights-title">
+        <h2 id="rights-title"><span class="section-number" aria-hidden="true">09</span>Your privacy rights</h2>
+        <p>Depending on your location and applicable law, your rights may include:</p>
+        <ul>
+          <li>Access to, a copy of, or correction of personal information we hold.</li>
+          <li>Deletion, portability, restriction of processing, or an objection to processing.</li>
+          <li>Withdrawal of consent where processing is based on consent.</li>
+          <li>A complaint to the data-protection authority responsible for your region.</li>
+        </ul>
+        <p>To exercise a right, <a href="#contact">contact us</a> and describe your request. We request only information reasonably necessary to verify your identity and locate relevant records, and respond within the period required by applicable law. If we cannot fully fulfill a request because of a lawful exception, we will explain the reason. We will not discriminate against you for exercising applicable privacy rights.</p>
+      </section>
+      <section id="children" aria-labelledby="children-title">
+        <h2 id="children-title"><span class="section-number" aria-hidden="true">10</span>Children's privacy</h2>
+        <p>Age suitability depends on the App; refer to its app-store listing. The on-device practices above do not give us access to a child's local app information.</p>
+        <p>We do not knowingly collect personal information from children under 13, or under another age requiring parental consent in their jurisdiction, without the required authorization. If you believe a child has provided personal information to us, contact us so we can investigate and take appropriate action, including deletion where required.</p>
+      </section>
+      <section id="international" aria-labelledby="international-title">
+        <h2 id="international-title"><span class="section-number" aria-hidden="true">11</span>International processing</h2>
+        <p>Support email and website connection information may be processed in countries other than where you live, depending on the infrastructure used by Microsoft and GitHub. Their privacy statements describe processing locations and international data-transfer safeguards.</p>
+        <p>Where applicable law restricts an international transfer we make, we use the safeguards it requires. Contact us for information about transfers relevant to information we hold. This does not mean that locally stored App content is transferred to us.</p>
+      </section>
+      <section id="changes" aria-labelledby="changes-title">
+        <h2 id="changes-title"><span class="section-number" aria-hidden="true">12</span>Changes to this policy</h2>
+        <p>We publish revisions at this address and update the effective date. If a change materially affects how personal information is handled, we provide an appropriate notice through the affected App or another suitable channel before the new processing begins, and obtain consent where required.</p>
+        <p>A policy update or continued use of an App does not, by itself, provide consent for processing that requires your permission.</p>
+      </section>
+      <section id="contact" aria-labelledby="contact-title">
+        <h2 id="contact-title"><span class="section-number" aria-hidden="true">13</span>Contact us</h2>
+        <p>For privacy questions, withdrawal of consent, or a request about your information, use the email address below. Include the App's name and version and, where relevant, your country or region so we can address the practices and rights that apply to you.</p>
+        <div class="contact-block">
+          <p class="contact-label">Privacy questions and requests</p>
+          <a class="contact-address" href="mailto:kingla0810@outlook.com">kingla0810@outlook.com</a>
+        </div>
+      </section>
+    </article>
+    <footer class="policy-footer">
+      <p>Privacy Policy · Updated <time datetime="2026-10-19">19 October 2026</time></p>
+      <a class="back-to-top" href="#top">Back to top ↑</a>
+    </footer>
+  </main>
+  <script>
+    (() => {
+      const contents = document.getElementById('policy-contents');
+      contents.open = !window.matchMedia('(max-width: 800px)').matches;
+      document.getElementById('print-policy').addEventListener('click', () => window.print());
+      document.documentElement.classList.add('js');
+      const links = Array.from(contents.querySelectorAll('a'));
+      const sections = Array.from(document.querySelectorAll('.policy-content section'));
+      const markCurrent = id => {
+        links.forEach(link => {
+          if (link.hash === '#' + id) link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+      };
+      const updateCurrent = () => {
+        let current = sections[0];
+        const threshold = Math.min(160, window.innerHeight * .25);
+        sections.forEach(section => {
+          if (section.getBoundingClientRect().top <= threshold) current = section;
+        });
+        if (Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 2) {
+          current = sections[sections.length - 1];
+        }
+        markCurrent(current.id);
+      };
+      let scheduled = false;
+      const scheduleUpdate = () => {
+        if (scheduled) return;
+        scheduled = true;
+        window.requestAnimationFrame(() => {
+          updateCurrent();
+          scheduled = false;
+        });
+      };
+      window.addEventListener('scroll', scheduleUpdate, { passive: true });
+      window.addEventListener('resize', scheduleUpdate);
+      updateCurrent();
+    })();
+  </script>
 </body>
 </html>
